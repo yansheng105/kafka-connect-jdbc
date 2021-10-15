@@ -48,7 +48,8 @@ public class JdbcSinkConfig extends AbstractConfig {
   public enum InsertMode {
     INSERT,
     UPSERT,
-    UPDATE;
+    UPDATE,
+    DELETE_AND_INSERT;
 
   }
 

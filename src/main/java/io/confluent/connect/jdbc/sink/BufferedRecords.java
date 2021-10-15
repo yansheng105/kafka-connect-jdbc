@@ -39,6 +39,7 @@ import io.confluent.connect.jdbc.sink.metadata.SchemaPair;
 import io.confluent.connect.jdbc.util.ColumnId;
 import io.confluent.connect.jdbc.util.TableId;
 
+import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.DELETE_AND_INSERT;
 import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.INSERT;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
@@ -135,6 +136,23 @@ public class BufferedRecords {
           deleteSql,
           fieldsMetadata
       );
+
+      // 先删除掉原有记录，之后再按插入模式插入即可
+      if (config.insertMode == DELETE_AND_INSERT) {
+        try (PreparedStatement ps = dbDialect.createPreparedStatement(connection, deleteSql)) {
+          new PreparedStatementBinder(
+                  dbDialect,
+                  ps,
+                  config.pkMode,
+                  schemaPair,
+                  fieldsMetadata,
+                  dbStructure.tableDefinition(connection, tableId),
+                  config.insertMode
+          ).bindKeyFields(record, 1);
+          ps.execute();
+        }
+      }
+
       close();
       updatePreparedStatement = dbDialect.createPreparedStatement(connection, insertSql);
       updateStatementBinder = dbDialect.statementBinder(
@@ -267,6 +285,7 @@ public class BufferedRecords {
   private String getInsertSql() throws SQLException {
     switch (config.insertMode) {
       case INSERT:
+      case DELETE_AND_INSERT:
         return dbDialect.buildInsertStatement(
             tableId,
             asColumns(fieldsMetadata.keyFieldNames),
