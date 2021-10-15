@@ -316,12 +316,23 @@ public class BufferedRecords {
           ));
         }
       case UPDATE:
-        return dbDialect.buildUpdateStatement(
-            tableId,
-            asColumns(fieldsMetadata.keyFieldNames),
-            asColumns(fieldsMetadata.nonKeyFieldNames),
-            dbStructure.tableDefinition(connection, tableId)
+        String updateSql = dbDialect.buildUpdateStatement(
+                tableId,
+                asColumns(fieldsMetadata.keyFieldNames),
+                asColumns(fieldsMetadata.nonKeyFieldNames),
+                dbStructure.tableDefinition(connection, tableId)
         );
+        if (config.addFields.trim().length() > 0) {
+          int where = updateSql.indexOf("WHERE") - 1;
+          StringBuilder sb = new StringBuilder(updateSql.substring(0, where));
+          String[] split = config.addFields.trim().split(";");
+          for (String extra : split) {
+            sb.append(", ").append(extra);
+          }
+          sb.append(updateSql.substring(where));
+          updateSql = sb.toString();
+        }
+        return updateSql;
       default:
         throw new ConnectException("Invalid insert mode");
     }

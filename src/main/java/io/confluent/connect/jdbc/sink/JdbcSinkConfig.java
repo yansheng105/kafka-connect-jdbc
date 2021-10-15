@@ -223,6 +223,11 @@ public class JdbcSinkConfig extends AbstractConfig {
   private static final String FIELDS_BLACKLIST_DOC = "字段黑名单，不能与`fields.whitelist`属性一起使用";
   private static final String FIELDS_BLACKLIST_DISPLAY = "Fields Blacklist";
 
+  public static final String ADD_FIELDS = "add.fields";
+  private static final String ADD_FIELDS_DEFAULT = "";
+  private static final String ADD_FIELDS_DOC = "需要额外增加的字段，用于更新指定列";
+  private static final String ADD_FIELDS_DISPLAY = "Add Extra Fields";
+
   private static final ConfigDef.Range NON_NEGATIVE_INT_VALIDATOR = ConfigDef.Range.atLeast(0);
 
   private static final String CONNECTION_GROUP = "Connection";
@@ -461,6 +466,17 @@ public class JdbcSinkConfig extends AbstractConfig {
             FIELDS_BLACKLIST_DISPLAY
         )
         .define(
+            ADD_FIELDS,
+            ConfigDef.Type.STRING,
+            ADD_FIELDS_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            ADD_FIELDS_DOC,
+            DATAMAPPING_GROUP,
+            7,
+            ConfigDef.Width.LONG,
+            ADD_FIELDS_DISPLAY
+        )
+        .define(
             DB_TIMEZONE_CONFIG,
             ConfigDef.Type.STRING,
             DB_TIMEZONE_DEFAULT,
@@ -468,7 +484,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.MEDIUM,
             DB_TIMEZONE_CONFIG_DOC,
             DATAMAPPING_GROUP,
-            6,
+            8,
             ConfigDef.Width.MEDIUM,
             DB_TIMEZONE_CONFIG_DISPLAY
         )
@@ -549,6 +565,7 @@ public class JdbcSinkConfig extends AbstractConfig {
   public final List<String> pkFields;
   public final Set<String> fieldsWhitelist;
   public final Set<String> fieldsBlacklist;
+  public final String addFields;
   public final String dialectName;
   public final TimeZone timeZone;
   public final EnumSet<TableType> tableTypes;
@@ -579,6 +596,7 @@ public class JdbcSinkConfig extends AbstractConfig {
       throw new ConfigException("Cannot use connector configuration properties fields.whitelist"
               + " and fields.blacklist at the same time");
     }
+    addFields = getString(ADD_FIELDS);
     String dbTimeZone = getString(DB_TIMEZONE_CONFIG);
     timeZone = TimeZone.getTimeZone(ZoneId.of(dbTimeZone));
 
