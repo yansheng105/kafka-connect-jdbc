@@ -218,6 +218,11 @@ public class JdbcSinkConfig extends AbstractConfig {
       + " while this configuration is applicable for the other columns.";
   private static final String FIELDS_WHITELIST_DISPLAY = "Fields Whitelist";
 
+  public static final String FIELDS_BLACKLIST = "fields.blacklist";
+  private static final String FIELDS_BLACKLIST_DEFAULT = "";
+  private static final String FIELDS_BLACKLIST_DOC = "字段黑名单，不能与`fields.whitelist`属性一起使用";
+  private static final String FIELDS_BLACKLIST_DISPLAY = "Fields Blacklist";
+
   private static final ConfigDef.Range NON_NEGATIVE_INT_VALIDATOR = ConfigDef.Range.atLeast(0);
 
   private static final String CONNECTION_GROUP = "Connection";
@@ -400,15 +405,15 @@ public class JdbcSinkConfig extends AbstractConfig {
             TABLE_NAME_FORMAT_DISPLAY
         )
         .define(
-                TABLE_NAME_MAPPING,
-                ConfigDef.Type.STRING,
-                TABLE_NAME_MAPPING_DEFAULT,
-                ConfigDef.Importance.MEDIUM,
-                TABLE_NAME_MAPPING_DOC,
-                DATAMAPPING_GROUP,
-                2,
-                ConfigDef.Width.LONG,
-                TABLE_NAME_MAPPING_DISPLAY
+            TABLE_NAME_MAPPING,
+            ConfigDef.Type.STRING,
+            TABLE_NAME_MAPPING_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            TABLE_NAME_MAPPING_DOC,
+            DATAMAPPING_GROUP,
+            2,
+            ConfigDef.Width.LONG,
+            TABLE_NAME_MAPPING_DISPLAY
         )
         .define(
             PK_MODE,
@@ -443,17 +448,29 @@ public class JdbcSinkConfig extends AbstractConfig {
             5,
             ConfigDef.Width.LONG,
             FIELDS_WHITELIST_DISPLAY
-        ).define(
-          DB_TIMEZONE_CONFIG,
-          ConfigDef.Type.STRING,
-          DB_TIMEZONE_DEFAULT,
-          TimeZoneValidator.INSTANCE,
-          ConfigDef.Importance.MEDIUM,
-          DB_TIMEZONE_CONFIG_DOC,
-          DATAMAPPING_GROUP,
-          6,
-          ConfigDef.Width.MEDIUM,
-          DB_TIMEZONE_CONFIG_DISPLAY
+        )
+        .define(
+            FIELDS_BLACKLIST,
+            ConfigDef.Type.LIST,
+            FIELDS_BLACKLIST_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            FIELDS_BLACKLIST_DOC,
+            DATAMAPPING_GROUP,
+            6,
+            ConfigDef.Width.LONG,
+            FIELDS_BLACKLIST_DISPLAY
+        )
+        .define(
+            DB_TIMEZONE_CONFIG,
+            ConfigDef.Type.STRING,
+            DB_TIMEZONE_DEFAULT,
+            TimeZoneValidator.INSTANCE,
+            ConfigDef.Importance.MEDIUM,
+            DB_TIMEZONE_CONFIG_DOC,
+            DATAMAPPING_GROUP,
+            6,
+            ConfigDef.Width.MEDIUM,
+            DB_TIMEZONE_CONFIG_DISPLAY
         )
         // DDL
         .define(
@@ -531,6 +548,7 @@ public class JdbcSinkConfig extends AbstractConfig {
   public final PrimaryKeyMode pkMode;
   public final List<String> pkFields;
   public final Set<String> fieldsWhitelist;
+  public final Set<String> fieldsBlacklist;
   public final String dialectName;
   public final TimeZone timeZone;
   public final EnumSet<TableType> tableTypes;
@@ -556,6 +574,11 @@ public class JdbcSinkConfig extends AbstractConfig {
     pkFields = getList(PK_FIELDS);
     dialectName = getString(DIALECT_NAME_CONFIG);
     fieldsWhitelist = new HashSet<>(getList(FIELDS_WHITELIST));
+    fieldsBlacklist = new HashSet<>(getList(FIELDS_BLACKLIST));
+    if (!fieldsWhitelist.isEmpty() && !fieldsBlacklist.isEmpty()) {
+      throw new ConfigException("Cannot use connector configuration properties fields.whitelist"
+              + " and fields.blacklist at the same time");
+    }
     String dbTimeZone = getString(DB_TIMEZONE_CONFIG);
     timeZone = TimeZone.getTimeZone(ZoneId.of(dbTimeZone));
 

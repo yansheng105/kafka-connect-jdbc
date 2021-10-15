@@ -62,6 +62,7 @@ public class FieldsMetadata {
       final JdbcSinkConfig.PrimaryKeyMode pkMode,
       final List<String> configuredPkFields,
       final Set<String> fieldsWhitelist,
+      final Set<String> fieldsBlacklist,
       final SchemaPair schemaPair
   ) {
     return extract(
@@ -69,6 +70,7 @@ public class FieldsMetadata {
         pkMode,
         configuredPkFields,
         fieldsWhitelist,
+        fieldsBlacklist,
         schemaPair.keySchema,
         schemaPair.valueSchema
     );
@@ -79,6 +81,7 @@ public class FieldsMetadata {
       final JdbcSinkConfig.PrimaryKeyMode pkMode,
       final List<String> configuredPkFields,
       final Set<String> fieldsWhitelist,
+      final Set<String> fieldsBlacklist,
       final Schema keySchema,
       final Schema valueSchema
   ) {
@@ -116,6 +119,9 @@ public class FieldsMetadata {
           continue;
         }
         if (!fieldsWhitelist.isEmpty() && !fieldsWhitelist.contains(field.name())) {
+          continue;
+        }
+        if (!fieldsBlacklist.isEmpty() && fieldsBlacklist.contains(field.name())) {
           continue;
         }
 
