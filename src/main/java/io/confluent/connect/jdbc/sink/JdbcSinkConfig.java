@@ -113,6 +113,14 @@ public class JdbcSinkConfig extends AbstractConfig {
       + "'kafka_orders'.";
   private static final String TABLE_NAME_FORMAT_DISPLAY = "Table Name Format";
 
+  private static final String TABLE_NAME_MAPPING = "table.name.mapping";
+  private static final String TABLE_NAME_MAPPING_DEFAULT = "";
+  private static final String TABLE_NAME_MAPPING_DOC = "The mapping between table name and topic "
+          + "name, the configuration format is: tabName1:topic1,topic2;tabName2:topic3,topic4"
+          + "For example: when the `order` table is mapped to topic mysql_order and oracle_order, "
+          + "it should be configured like this: ``order:kafka_mysql_order,kafka_oracle_order``";
+  private static final String TABLE_NAME_MAPPING_DISPLAY = "Table Name Mapping";
+
   public static final String MAX_RETRIES = "max.retries";
   private static final int MAX_RETRIES_DEFAULT = 10;
   private static final String MAX_RETRIES_DOC =
@@ -392,6 +400,17 @@ public class JdbcSinkConfig extends AbstractConfig {
             TABLE_NAME_FORMAT_DISPLAY
         )
         .define(
+                TABLE_NAME_MAPPING,
+                ConfigDef.Type.STRING,
+                TABLE_NAME_MAPPING_DEFAULT,
+                ConfigDef.Importance.MEDIUM,
+                TABLE_NAME_MAPPING_DOC,
+                DATAMAPPING_GROUP,
+                2,
+                ConfigDef.Width.LONG,
+                TABLE_NAME_MAPPING_DISPLAY
+        )
+        .define(
             PK_MODE,
             ConfigDef.Type.STRING,
             PK_MODE_DEFAULT,
@@ -399,7 +418,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.HIGH,
             PK_MODE_DOC,
             DATAMAPPING_GROUP,
-            2,
+            3,
             ConfigDef.Width.MEDIUM,
             PK_MODE_DISPLAY,
             PrimaryKeyModeRecommender.INSTANCE
@@ -411,7 +430,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.MEDIUM,
             PK_FIELDS_DOC,
             DATAMAPPING_GROUP,
-            3,
+            4,
             ConfigDef.Width.LONG, PK_FIELDS_DISPLAY
         )
         .define(
@@ -421,7 +440,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.MEDIUM,
             FIELDS_WHITELIST_DOC,
             DATAMAPPING_GROUP,
-            4,
+            5,
             ConfigDef.Width.LONG,
             FIELDS_WHITELIST_DISPLAY
         ).define(
@@ -432,7 +451,7 @@ public class JdbcSinkConfig extends AbstractConfig {
           ConfigDef.Importance.MEDIUM,
           DB_TIMEZONE_CONFIG_DOC,
           DATAMAPPING_GROUP,
-          5,
+          6,
           ConfigDef.Width.MEDIUM,
           DB_TIMEZONE_CONFIG_DISPLAY
         )
@@ -501,6 +520,7 @@ public class JdbcSinkConfig extends AbstractConfig {
   public final int connectionAttempts;
   public final long connectionBackoffMs;
   public final String tableNameFormat;
+  public final String tableNameMapping;
   public final int batchSize;
   public final boolean deleteEnabled;
   public final int maxRetries;
@@ -524,6 +544,7 @@ public class JdbcSinkConfig extends AbstractConfig {
     connectionAttempts = getInt(CONNECTION_ATTEMPTS);
     connectionBackoffMs = getLong(CONNECTION_BACKOFF);
     tableNameFormat = getString(TABLE_NAME_FORMAT).trim();
+    tableNameMapping = getString(TABLE_NAME_MAPPING).trim();
     batchSize = getInt(BATCH_SIZE);
     deleteEnabled = getBoolean(DELETE_ENABLED);
     maxRetries = getInt(MAX_RETRIES);

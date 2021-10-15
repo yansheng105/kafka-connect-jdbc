@@ -37,6 +37,7 @@ public class JdbcDbWriter {
   private final DatabaseDialect dbDialect;
   private final DbStructure dbStructure;
   final CachedConnectionProvider cachedConnectionProvider;
+  private final Map<String,String> tableNameMapping;
 
   JdbcDbWriter(final JdbcSinkConfig config, DatabaseDialect dbDialect, DbStructure dbStructure) {
     this.config = config;
@@ -47,6 +48,8 @@ public class JdbcDbWriter {
         config.connectionAttempts,
         config.connectionBackoffMs
     );
+    this.tableNameMapping = destinationTableMapping(config.tableNameMapping);
+
   }
 
   protected CachedConnectionProvider connectionProvider(int maxConnAttempts, long retryBackoff) {
@@ -97,14 +100,45 @@ public class JdbcDbWriter {
   }
 
   TableId destinationTable(String topic) {
-    final String tableName = config.tableNameFormat.replace("${topic}", topic);
-    if (tableName.isEmpty()) {
-      throw new ConnectException(String.format(
-          "Destination table name for topic '%s' is empty using the format string '%s'",
-          topic,
-          config.tableNameFormat
-      ));
+    if (tableNameMapping.isEmpty()) {
+      final String tableName = config.tableNameFormat.replace("${topic}", topic);
+      if (tableName.isEmpty()) {
+        throw new ConnectException(String.format(
+                "Destination table name for topic '%s' is empty using the format string '%s'",
+                topic,
+                config.tableNameFormat
+        ));
+      }
+      return dbDialect.parseTableIdentifier(tableName);
+    } else {
+      if (tableNameMapping.containsKey(topic)) {
+        return dbDialect.parseTableIdentifier(tableNameMapping.get(topic));
+      } else {
+        throw new ConnectException(String.format(
+                "Destination table name for topic '%s' is empty using the mapping string '%s'",
+                topic,
+                config.tableNameMapping
+        ));
+      }
     }
-    return dbDialect.parseTableIdentifier(tableName);
+  }
+
+  private Map<String, String> destinationTableMapping(String tableNameMapping) {
+    try {
+      Map<String, String> map = new HashMap<>();
+      if (tableNameMapping.length() > 0) {
+        for (String tbNameMapping : tableNameMapping.split(";")) {
+          String[] mapping = tbNameMapping.split(":");
+          for (String key : mapping[1].split(",")) {
+            map.put(key.trim(), mapping[0]);
+          }
+        }
+      }
+      return map;
+    } catch (Exception e) {
+      throw new ConnectException("The target table name is incorrectly mapped. The format of "
+              + "the mapping string defined by the attribute `table.name.mapping` is incorrect. "
+              + "The correct format is: table1:topic1,topic2;table2:topic3,topic4");
+    }
   }
 }
