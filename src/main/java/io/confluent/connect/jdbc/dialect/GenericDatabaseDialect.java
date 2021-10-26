@@ -1208,9 +1208,8 @@ public class GenericDatabaseDialect implements DatabaseDialect {
         connection.rollback();
       } catch (SQLException sqle) {
         e.addSuppressed(sqle);
-      } finally {
-        throw e;
       }
+      throw e;
     }
   }
 
@@ -1575,6 +1574,28 @@ public class GenericDatabaseDialect implements DatabaseDialect {
           .of(keyColumns);
     }
     return builder.toString();
+  }
+
+  @Override
+  public String buildBatchUpdateStatement(
+      TableId table,
+      Collection<ColumnId> keyColumns,
+      Collection<ColumnId> nonKeyColumns,
+      TableDefinition definition,
+      int batchSize
+  ) {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public String buildBatchDeleteStatement(
+      TableId table,
+      Collection<ColumnId> keyColumns,
+      Collection<ColumnId> nonKeyColumns,
+      TableDefinition definition,
+      int batchSize
+  ) {
+    throw new UnsupportedOperationException();
   }
 
   @SuppressWarnings("deprecation")

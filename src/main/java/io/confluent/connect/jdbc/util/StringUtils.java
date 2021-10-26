@@ -17,6 +17,9 @@ package io.confluent.connect.jdbc.util;
 
 import org.apache.kafka.connect.data.Schema;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * General string utilities that are missing from the standard library and may commonly be
  * required by Connector or Task implementations.
@@ -71,5 +74,21 @@ public class StringUtils {
       default:
         return schema.type().getName();
     }
+  }
+
+  public static boolean isEmpty(Object str) {
+    return (str == null || "".equals(str));
+  }
+
+  public static boolean isNotEmpty(Object str) {
+    return !isEmpty(str);
+  }
+
+  public static String getPlaceholderString(int placeholderSize) {
+    List<String> placeholder = new ArrayList<>();
+    for (int i = 0; i < placeholderSize; i++) {
+      placeholder.add("?");
+    }
+    return "(" + String.join(",", placeholder) + ")";
   }
 }

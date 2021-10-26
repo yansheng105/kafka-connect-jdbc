@@ -15,9 +15,14 @@
 
 package io.confluent.connect.jdbc.dialect;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Map;
+
+import io.confluent.connect.jdbc.util.StringUtils;
+import io.confluent.connect.jdbc.util.ExpressionBuilder;
+import io.confluent.connect.jdbc.util.IdentifierRules;
+import io.confluent.connect.jdbc.util.ColumnId;
+import io.confluent.connect.jdbc.util.ColumnDefinition;
+import io.confluent.connect.jdbc.util.TableId;
+import io.confluent.connect.jdbc.util.TableDefinition;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.connect.data.Date;
@@ -33,20 +38,19 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Arrays;
 import java.util.Set;
+import java.util.Collections;
 import java.util.UUID;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialectProvider.SubprotocolBasedProvider;
 import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
 import io.confluent.connect.jdbc.source.ColumnMapping;
-import io.confluent.connect.jdbc.util.ColumnDefinition;
-import io.confluent.connect.jdbc.util.ColumnId;
-import io.confluent.connect.jdbc.util.ExpressionBuilder;
 import io.confluent.connect.jdbc.util.ExpressionBuilder.Transform;
-import io.confluent.connect.jdbc.util.IdentifierRules;
-import io.confluent.connect.jdbc.util.TableDefinition;
-import io.confluent.connect.jdbc.util.TableId;
 import org.apache.kafka.connect.errors.DataException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,6 +79,11 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
   static final String JSON_TYPE_NAME = "json";
   static final String JSONB_TYPE_NAME = "jsonb";
   static final String UUID_TYPE_NAME = "uuid";
+
+  final ExpressionBuilder.Transform<ColumnId> transform2 = (builder, input) -> {
+    String colName = input.name();
+    builder.append("a.").append(colName).append("=b.").append(colName);
+  };
 
   /**
    * Define the PG datatypes that require casting upon insert/update statements.
@@ -156,11 +165,11 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
 
         if (UUID.class.getName().equals(columnDefn.classNameForType())) {
           builder.field(
-                  fieldName,
-                  columnDefn.isOptional()
-                          ?
-                          Schema.OPTIONAL_STRING_SCHEMA :
-                          Schema.STRING_SCHEMA
+              fieldName,
+              columnDefn.isOptional()
+                  ?
+                  Schema.OPTIONAL_STRING_SCHEMA :
+                  Schema.STRING_SCHEMA
           );
           return fieldName;
         }
@@ -257,10 +266,10 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
         return "BYTEA";
       case ARRAY:
         SinkRecordField childField = new SinkRecordField(
-              field.schema().valueSchema(),
-              field.name(),
-              field.isPrimaryKey()
-            );
+            field.schema().valueSchema(),
+            field.name(),
+            field.isPrimaryKey()
+        );
         return getSqlType(childField) + "[]";
       default:
         return super.getSqlType(field);
@@ -279,14 +288,14 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
     builder.append(table);
     builder.append(" (");
     builder.appendList()
-           .delimitedBy(",")
-           .transformedBy(ExpressionBuilder.columnNames())
-           .of(keyColumns, nonKeyColumns);
+        .delimitedBy(",")
+        .transformedBy(ExpressionBuilder.columnNames())
+        .of(keyColumns, nonKeyColumns);
     builder.append(") VALUES (");
     builder.appendList()
-           .delimitedBy(",")
-           .transformedBy(this.columnValueVariables(definition))
-           .of(keyColumns, nonKeyColumns);
+        .delimitedBy(",")
+        .transformedBy(this.columnValueVariables(definition))
+        .of(keyColumns, nonKeyColumns);
     builder.append(")");
     return builder.toString();
   }
@@ -303,15 +312,15 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
     builder.append(table);
     builder.append(" SET ");
     builder.appendList()
-           .delimitedBy(", ")
-           .transformedBy(this.columnNamesWithValueVariables(definition))
-           .of(nonKeyColumns);
+        .delimitedBy(", ")
+        .transformedBy(this.columnNamesWithValueVariables(definition))
+        .of(nonKeyColumns);
     if (!keyColumns.isEmpty()) {
       builder.append(" WHERE ");
       builder.appendList()
-             .delimitedBy(" AND ")
-             .transformedBy(ExpressionBuilder.columnNamesWith(" = ?"))
-             .of(keyColumns);
+          .delimitedBy(" AND ")
+          .transformedBy(ExpressionBuilder.columnNamesWith(" = ?"))
+          .of(keyColumns);
     }
     return builder.toString();
   }
@@ -325,8 +334,8 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
   ) {
     final Transform<ColumnId> transform = (builder, col) -> {
       builder.appendColumnName(col.name())
-             .append("=EXCLUDED.")
-             .appendColumnName(col.name());
+          .append("=EXCLUDED.")
+          .appendColumnName(col.name());
     };
 
     ExpressionBuilder builder = expressionBuilder();
@@ -334,27 +343,130 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
     builder.append(table);
     builder.append(" (");
     builder.appendList()
-           .delimitedBy(",")
-           .transformedBy(ExpressionBuilder.columnNames())
-           .of(keyColumns, nonKeyColumns);
+        .delimitedBy(",")
+        .transformedBy(ExpressionBuilder.columnNames())
+        .of(keyColumns, nonKeyColumns);
     builder.append(") VALUES (");
     builder.appendList()
-           .delimitedBy(",")
-           .transformedBy(this.columnValueVariables(definition))
-           .of(keyColumns, nonKeyColumns);
+        .delimitedBy(",")
+        .transformedBy(this.columnValueVariables(definition))
+        .of(keyColumns, nonKeyColumns);
     builder.append(") ON CONFLICT (");
     builder.appendList()
-           .delimitedBy(",")
-           .transformedBy(ExpressionBuilder.columnNames())
-           .of(keyColumns);
+        .delimitedBy(",")
+        .transformedBy(ExpressionBuilder.columnNames())
+        .of(keyColumns);
     if (nonKeyColumns.isEmpty()) {
       builder.append(") DO NOTHING");
     } else {
       builder.append(") DO UPDATE SET ");
       builder.appendList()
-              .delimitedBy(",")
-              .transformedBy(transform)
-              .of(nonKeyColumns);
+          .delimitedBy(",")
+          .transformedBy(transform)
+          .of(nonKeyColumns);
+    }
+    return builder.toString();
+  }
+
+  @Override
+  public String buildBatchUpdateStatement(
+      TableId table,
+      Collection<ColumnId> keyColumns,
+      Collection<ColumnId> nonKeyColumns,
+      TableDefinition definition,
+      int batchSize
+  ) {
+    if (batchSize < 1) {
+      return null;
+    }
+    final ExpressionBuilder.Transform<ColumnId> transform = (builder, input) -> {
+      String colName = input.name();
+      builder.append(colName).append("=b.").append(colName);
+    };
+
+    ExpressionBuilder builder = expressionBuilder();
+    builder.append("UPDATE ");
+    builder.append(table);
+    builder.append(" a SET ");
+    builder.appendList()
+        .delimitedBy(",")
+        .transformedBy(transform)
+        .of(nonKeyColumns);
+    builder.append(" FROM (VALUES ");
+
+    List<String> placeholder = new ArrayList<>();
+    List<ColumnId> allColumns = new ArrayList<>(keyColumns);
+    allColumns.addAll(nonKeyColumns);
+    for (ColumnId columnId : allColumns) {
+      placeholder.add("?" + valueTypeCast(definition, columnId));
+    }
+
+    String placeholderString = "(" + String.join(",", placeholder) + ")";
+    List<String> values = new ArrayList<>(batchSize);
+    for (int i = 0; i < batchSize; i++) {
+      values.add(placeholderString);
+    }
+
+    builder.append(String.join(",", values));
+    builder.append(") as b(");
+    builder.appendList()
+        .delimitedBy(",")
+        .transformedBy(ExpressionBuilder.columnNames())
+        .of(keyColumns, nonKeyColumns);
+    builder.append(") WHERE ");
+    builder.appendList()
+        .delimitedBy(",")
+        .transformedBy(transform2)
+        .of(keyColumns);
+    return builder.toString();
+  }
+
+  @Override
+  public String buildBatchDeleteStatement(
+      TableId table,
+      Collection<ColumnId> keyColumns,
+      Collection<ColumnId> nonKeyColumns,
+      TableDefinition definition,
+      int batchSize
+  ) {
+    ExpressionBuilder builder = expressionBuilder();
+    if (keyColumns.size() > 1) {
+      builder.append("DELETE FROM ");
+      builder.append(table);
+      builder.append(" a USING (VALUES ");
+
+      List<String> placeholder = new ArrayList<>(keyColumns.size());
+      for (ColumnId keyColumn : keyColumns) {
+        placeholder.add("?" + valueTypeCast(definition, keyColumn));
+      }
+      String placeholderString = "(" + String.join(",", placeholder) + ")";
+      List<String> values = new ArrayList<>(batchSize);
+      for (int i = 0; i < batchSize; i++) {
+        values.add(placeholderString);
+      }
+
+      builder.append(String.join(",", values));
+      builder.append(") as b(");
+      builder.appendList()
+          .delimitedBy(",")
+          .transformedBy(ExpressionBuilder.columnNames())
+          .of(keyColumns);
+      builder.append(") WHERE ");
+      builder.appendList()
+          .delimitedBy(" AND ")
+          .transformedBy(transform2)
+          .of(keyColumns);
+
+    } else {
+      builder.append("DELETE FROM ");
+      builder.append(table);
+      builder.append(" WHERE ");
+      builder.appendList()
+          .delimitedBy(",")
+          .transformedBy(ExpressionBuilder.columnNames())
+          .of(keyColumns);
+      builder.append(" IN ");
+      builder.append(StringUtils.getPlaceholderString(batchSize));
     }
     return builder.toString();
   }
@@ -447,15 +559,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
     return super.maybeBindPrimitive(statement, index, schema, value);
   }
 
-  /**
-   * Return the transform that produces an assignment expression each with the name of one of the
-   * columns and the prepared statement variable. PostgreSQL may require the variable to have a
-   * type suffix, such as {@code ?::uuid}.
-   *
-   * @param defn the table definition; may be null if unknown
-   * @return the transform that produces the assignment expression for use within a prepared
-   *         statement; never null
-   */
+
   protected Transform<ColumnId> columnNamesWithValueVariables(TableDefinition defn) {
     return (builder, columnId) -> {
       builder.appendColumnName(columnId.name());
@@ -505,4 +609,5 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
     }
     return "";
   }
+
 }

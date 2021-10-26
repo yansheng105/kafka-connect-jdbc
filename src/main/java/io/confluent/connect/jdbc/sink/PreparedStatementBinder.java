@@ -29,6 +29,7 @@ import org.apache.kafka.connect.sink.SinkRecord;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.List;
 
 import static java.util.Objects.isNull;
 
@@ -110,6 +111,42 @@ public class PreparedStatementBinder implements StatementBinder {
         default:
           throw new AssertionError();
 
+      }
+    }
+    statement.addBatch();
+  }
+
+  @Override
+  public void bindRecords(List<SinkRecord> records) throws SQLException {
+    final Struct valueStruct = (Struct) records.get(0).value();
+    final boolean isDelete = isNull(valueStruct);
+    // Assumption: the relevant SQL has placeholders for keyFieldNames first followed by
+    //             nonKeyFieldNames, in iteration order for all INSERT/ UPSERT queries
+    //             the relevant SQL has placeholders for keyFieldNames,
+    //             in iteration order for all DELETE queries
+    //             the relevant SQL has placeholders for nonKeyFieldNames first followed by
+    //             keyFieldNames, in iteration order for all UPDATE queries
+
+    int index = 1;
+    for (SinkRecord record : records) {
+      if (isDelete) {
+        index = bindKeyFields(record, index);
+      } else {
+        switch (insertMode) {
+          case INSERT:
+          case UPSERT:
+          case DELETE_AND_INSERT:
+            index = bindKeyFields(record, index);
+            index = bindNonKeyFields(record, valueStruct, index);
+            break;
+
+          case UPDATE:
+            index = bindNonKeyFields(record, valueStruct, index);
+            index = bindKeyFields(record, index);
+            break;
+          default:
+            throw new AssertionError();
+        }
       }
     }
     statement.addBatch();

@@ -66,22 +66,42 @@ public class JdbcDbWriter {
       throws SQLException, TableAlterOrCreateException {
     final Connection connection = cachedConnectionProvider.getConnection();
     try {
-      final Map<TableId, BufferedRecords> bufferByTable = new HashMap<>();
-      for (SinkRecord record : records) {
-        final TableId tableId = destinationTable(record.topic());
-        BufferedRecords buffer = bufferByTable.get(tableId);
-        if (buffer == null) {
-          buffer = new BufferedRecords(config, tableId, dbDialect, dbStructure, connection);
-          bufferByTable.put(tableId, buffer);
+      if (config.batchEnabled) {
+        final Map<TableId, BatchBufferedRecords> bufferByTable = new HashMap<>();
+        for (SinkRecord record : records) {
+          final TableId tableId = destinationTable(record.topic());
+          BatchBufferedRecords buffer = bufferByTable.get(tableId);
+          if (buffer == null) {
+            buffer = new BatchBufferedRecords(config, tableId, dbDialect, dbStructure, connection);
+            bufferByTable.put(tableId, buffer);
+          }
+          buffer.add(record);
         }
-        buffer.add(record);
-      }
-      for (Map.Entry<TableId, BufferedRecords> entry : bufferByTable.entrySet()) {
-        TableId tableId = entry.getKey();
-        BufferedRecords buffer = entry.getValue();
-        log.debug("Flushing records in JDBC Writer for table ID: {}", tableId);
-        buffer.flush();
-        buffer.close();
+        for (Map.Entry<TableId, BatchBufferedRecords> entry : bufferByTable.entrySet()) {
+          TableId tableId = entry.getKey();
+          BatchBufferedRecords buffer = entry.getValue();
+          log.debug("Flushing records in JDBC Writer for table ID: {}", tableId);
+          buffer.flush();
+          buffer.close();
+        }
+      } else {
+        final Map<TableId, BufferedRecords> bufferByTable = new HashMap<>();
+        for (SinkRecord record : records) {
+          final TableId tableId = destinationTable(record.topic());
+          BufferedRecords buffer = bufferByTable.get(tableId);
+          if (buffer == null) {
+            buffer = new BufferedRecords(config, tableId, dbDialect, dbStructure, connection);
+            bufferByTable.put(tableId, buffer);
+          }
+          buffer.add(record);
+        }
+        for (Map.Entry<TableId, BufferedRecords> entry : bufferByTable.entrySet()) {
+          TableId tableId = entry.getKey();
+          BufferedRecords buffer = entry.getValue();
+          log.debug("Flushing records in JDBC Writer for table ID: {}", tableId);
+          buffer.flush();
+          buffer.close();
+        }
       }
       connection.commit();
     } catch (SQLException | TableAlterOrCreateException e) {
@@ -89,9 +109,8 @@ public class JdbcDbWriter {
         connection.rollback();
       } catch (SQLException sqle) {
         e.addSuppressed(sqle);
-      } finally {
-        throw e;
       }
+      throw e;
     }
   }
 

@@ -16,6 +16,7 @@
 package io.confluent.connect.jdbc.sink;
 
 import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
@@ -139,7 +140,8 @@ public class BufferedRecords {
       );
 
       // 先删除掉原有记录，之后再按插入模式插入即可
-      if (config.insertMode == DELETE_AND_INSERT) {
+      if (config.insertMode == DELETE_AND_INSERT
+          && "u".equalsIgnoreCase(((Struct) record.value()).getString(config.eventTypeField))) {
         try (PreparedStatement ps = dbDialect.createPreparedStatement(connection, deleteSql)) {
           new PreparedStatementBinder(
                   dbDialect,
@@ -176,7 +178,7 @@ public class BufferedRecords {
         );
       }
     }
-    
+
     // set deletesInBatch if schema value is not null
     if (isNull(record.value()) && config.deleteEnabled) {
       deletesInBatch = true;

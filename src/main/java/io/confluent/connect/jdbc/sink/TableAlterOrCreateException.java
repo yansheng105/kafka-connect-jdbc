@@ -18,6 +18,7 @@ package io.confluent.connect.jdbc.sink;
 import org.apache.kafka.connect.errors.ConnectException;
 
 public class TableAlterOrCreateException extends ConnectException {
+  private static final long serialVersionUID = -8806125351851776595L;
 
   public TableAlterOrCreateException(String reason) {
     super(reason);

@@ -15,6 +15,11 @@
 
 package io.confluent.connect.jdbc.dialect;
 
+import io.confluent.connect.jdbc.util.IdentifierRules;
+import io.confluent.connect.jdbc.util.ColumnId;
+import io.confluent.connect.jdbc.util.ExpressionBuilder;
+import io.confluent.connect.jdbc.util.TableDefinition;
+import io.confluent.connect.jdbc.util.TableId;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.connect.data.Date;
 import org.apache.kafka.connect.data.Decimal;
@@ -29,11 +34,7 @@ import java.util.Collection;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialectProvider.SubprotocolBasedProvider;
 import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
-import io.confluent.connect.jdbc.util.ColumnId;
-import io.confluent.connect.jdbc.util.ExpressionBuilder;
 import io.confluent.connect.jdbc.util.ExpressionBuilder.Transform;
-import io.confluent.connect.jdbc.util.IdentifierRules;
-import io.confluent.connect.jdbc.util.TableId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -148,16 +149,59 @@ public class MySqlDatabaseDialect extends GenericDatabaseDialect {
     builder.append(table);
     builder.append("(");
     builder.appendList()
-           .delimitedBy(",")
-           .transformedBy(ExpressionBuilder.columnNames())
-           .of(keyColumns, nonKeyColumns);
+        .delimitedBy(",")
+        .transformedBy(ExpressionBuilder.columnNames())
+        .of(keyColumns, nonKeyColumns);
     builder.append(") values(");
     builder.appendMultiple(",", "?", keyColumns.size() + nonKeyColumns.size());
     builder.append(") on duplicate key update ");
     builder.appendList()
-           .delimitedBy(",")
-           .transformedBy(transform)
-           .of(nonKeyColumns.isEmpty() ? keyColumns : nonKeyColumns);
+        .delimitedBy(",")
+        .transformedBy(transform)
+        .of(nonKeyColumns.isEmpty() ? keyColumns : nonKeyColumns);
+    return builder.toString();
+  }
+
+  @Override
+  public String buildBatchUpdateStatement(
+      TableId table,
+      Collection<ColumnId> keyColumns,
+      Collection<ColumnId> nonKeyColumns,
+      TableDefinition definition,
+      int batchSize
+  ) {
+    if (batchSize < 1) {
+      return null;
+    }
+    final ExpressionBuilder.Transform<ColumnId> transform = (builder, input) -> {
+      String colName = input.name();
+      builder.append("a.").append(colName).append("=b.").append(colName);
+    };
+
+    ExpressionBuilder builder = expressionBuilder();
+    builder.append("UPDATE ");
+    builder.append(table);
+    builder.append(" a JOIN (");
+    for (int i = 0; i < batchSize; i++) {
+      builder.append("SELECT ");
+      builder.appendList()
+          .delimitedBy(",")
+          .transformedBy(ExpressionBuilder.columnNamesWithPrefix("? as "))
+          .of(keyColumns, nonKeyColumns);
+      if (i != batchSize - 1) {
+        builder.append(" UNION ");
+      }
+    }
+    builder.append(") b USING(");
+    builder.appendList()
+        .delimitedBy(",")
+        .transformedBy(ExpressionBuilder.columnNames())
+        .of(keyColumns);
+    builder.append(") SET ");
+    builder.appendList()
+        .delimitedBy(",")
+        .transformedBy(transform)
+        .of(nonKeyColumns);
     return builder.toString();
   }
 
@@ -166,7 +210,7 @@ public class MySqlDatabaseDialect extends GenericDatabaseDialect {
     // MySQL can also have "username:password@" at the beginning of the host list and
     // in parenthetical properties
     return super.sanitizedUrl(url)
-                .replaceAll("(?i)([(,]password=)[^,)]*", "$1****")
-                .replaceAll("(://[^:]*:)([^@]*)@", "$1****@");
+        .replaceAll("(?i)([(,]password=)[^,)]*", "$1****")
+        .replaceAll("(://[^:]*:)([^@]*)@", "$1****@");
   }
 }

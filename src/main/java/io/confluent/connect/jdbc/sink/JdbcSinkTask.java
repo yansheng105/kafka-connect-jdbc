@@ -42,6 +42,7 @@ public class JdbcSinkTask extends SinkTask {
   JdbcSinkConfig config;
   JdbcDbWriter writer;
   int remainingRetries;
+  DelayTrigger delayTrigger;
 
   @Override
   public void start(final Map<String, String> props) {
@@ -73,11 +74,23 @@ public class JdbcSinkTask extends SinkTask {
     if (records.isEmpty()) {
       return;
     }
+    // 延迟消费
+    if (config.delayConsumeEnable) {
+      if (null == delayTrigger) {
+        delayTrigger = new DelayTrigger(this, config.maxDelayTime, config.maxDelayBufferSize);
+      }
+      delayTrigger.put(records);
+    } else {
+      doWrite(records);
+    }
+  }
+
+  public void doWrite(Collection<SinkRecord> records) {
     final SinkRecord first = records.iterator().next();
     final int recordsCount = records.size();
     log.debug(
         "Received {} records. First record kafka coordinates:({}-{}-{}). Writing them to the "
-        + "database...",
+            + "database...",
         recordsCount, first.topic(), first.kafkaPartition(), first.kafkaOffset()
     );
     try {
@@ -96,7 +109,7 @@ public class JdbcSinkTask extends SinkTask {
           sqle
       );
       int totalExceptions = 0;
-      for (Throwable e :sqle) {
+      for (Throwable e : sqle) {
         totalExceptions++;
       }
       SQLException sqlAllMessagesException = getAllMessagesException(sqle);
@@ -162,6 +175,9 @@ public class JdbcSinkTask extends SinkTask {
     try {
       writer.closeQuietly();
     } finally {
+      if (null != delayTrigger) {
+        delayTrigger.close();
+      }
       try {
         if (dialect != null) {
           dialect.close();

@@ -506,6 +506,32 @@ public interface DatabaseDialect extends ConnectionProvider {
   List<String> buildAlterTable(TableId table, Collection<SinkRecordField> fields);
 
   /**
+   * 构建批量更新SQL
+   *
+   * @author yansheng
+   */
+  String buildBatchUpdateStatement(
+      TableId table,
+      Collection<ColumnId> keyColumns,
+      Collection<ColumnId> nonKeyColumns,
+      TableDefinition definition,
+      int batchSize
+  );
+
+  /**
+   * 构建批量删除SQL
+   *
+   * @author yansheng
+   */
+  String buildBatchDeleteStatement(
+      TableId table,
+      Collection<ColumnId> keyColumns,
+      Collection<ColumnId> nonKeyColumns,
+      TableDefinition definition,
+      int batchSize
+  );
+
+  /**
    * Create a component that can bind record values into the supplied prepared statement.
    * @param statement      the prepared statement
    * @param pkMode         the primary key mode; may not be null
@@ -611,7 +637,6 @@ public interface DatabaseDialect extends ConnectionProvider {
   /**
    * A function to bind the values from a sink record into a prepared statement.
    */
-  @FunctionalInterface
   interface StatementBinder {
 
     /**
@@ -621,6 +646,8 @@ public interface DatabaseDialect extends ConnectionProvider {
      * @throws SQLException if there is a problem binding values into the statement
      */
     void bindRecord(SinkRecord record) throws SQLException;
+
+    void bindRecords(List<SinkRecord> records) throws SQLException;
   }
 
   /**

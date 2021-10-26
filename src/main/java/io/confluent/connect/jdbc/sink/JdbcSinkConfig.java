@@ -140,6 +140,11 @@ public class JdbcSinkConfig extends AbstractConfig {
       + " table, when possible.";
   private static final String BATCH_SIZE_DISPLAY = "Batch Size";
 
+  public static final String BATCH_ENABLED = "batch.enabled";
+  private static final String BATCH_ENABLED_DEFAULT = "false";
+  private static final String BATCH_ENABLED_DOC = "是否允许启用批量执行SQL";
+  private static final String BATCH_ENABLED_DISPLAY = "Enable batch insert/update/delete";
+
   public static final String DELETE_ENABLED = "delete.enabled";
   private static final String DELETE_ENABLED_DEFAULT = "false";
   private static final String DELETE_ENABLED_DOC =
@@ -273,6 +278,26 @@ public class JdbcSinkConfig extends AbstractConfig {
       + "view definition does not match the records' schemas (regardless of ``"
       + AUTO_EVOLVE + "``).";
 
+  public static final String EVENT_TYPE_FIELD = "event.type.field";
+  private static final String EVENT_TYPE_FIELD_DEFAULT = "";
+  private static final String EVENT_TYPE_FIELD_DOC = "事件类型字段名";
+  private static final String EVENT_TYPE_FIELD_DISPLAY = "The event type field name";
+
+  public static final String DELAY_CONSUME_ENABLE = "delay.consume.enable";
+  private static final String DELAY_CONSUME_ENABLE_DEFAULT = "false";
+  private static final String DELAY_CONSUME_ENABLE_DOC = "是否允许延迟消费";
+  private static final String DELAY_CONSUME_ENABLE_DISPLAY = "Enable delay consume";
+
+  public static final String MAX_DELAY_TIME = "max.delay.time";
+  private static final int MAX_DELAY_TIME_DEFAULT = 1000;
+  private static final String MAX_DELAY_TIME_DOC = "延迟消费允许的最大延迟时间，单位：毫秒";
+  private static final String MAX_DELAY_TIME_DISPLAY = "延迟消费允许的最大延迟时间，单位：毫秒";
+
+  public static final String MAX_DELAY_BUFFER_SIZE = "max.delay.buffer.size";
+  private static final int MAX_DELAY_BUFFER_SIZE_DEFAULT = BATCH_SIZE_DEFAULT;
+  private static final String MAX_DELAY_BUFFER_SIZE_DOC = "启用消费延迟时，允许缓存的最大消息数";
+  private static final String MAX_DELAY_BUFFER_SIZE_DISPLAY = "启用消费延迟时，最大允许缓存的消息数";
+
   private static final EnumRecommender QUOTE_METHOD_RECOMMENDER =
       EnumRecommender.in(QuoteMethod.values());
 
@@ -374,12 +399,22 @@ public class JdbcSinkConfig extends AbstractConfig {
             BATCH_SIZE_DISPLAY
         )
         .define(
+            BATCH_ENABLED,
+            ConfigDef.Type.BOOLEAN,
+            BATCH_ENABLED_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            BATCH_ENABLED_DOC, WRITES_GROUP,
+            3,
+            ConfigDef.Width.SHORT,
+            BATCH_ENABLED_DISPLAY
+        )
+        .define(
             DELETE_ENABLED,
             ConfigDef.Type.BOOLEAN,
             DELETE_ENABLED_DEFAULT,
             ConfigDef.Importance.MEDIUM,
             DELETE_ENABLED_DOC, WRITES_GROUP,
-            3,
+            4,
             ConfigDef.Width.SHORT,
             DELETE_ENABLED_DISPLAY,
             DeleteEnabledRecommender.INSTANCE
@@ -392,9 +427,53 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.LOW,
             TABLE_TYPES_DOC,
             WRITES_GROUP,
-            4,
+            5,
             ConfigDef.Width.MEDIUM,
             TABLE_TYPES_DISPLAY
+        )
+        .define(
+            EVENT_TYPE_FIELD,
+            ConfigDef.Type.STRING,
+            EVENT_TYPE_FIELD_DEFAULT,
+            ConfigDef.Importance.LOW,
+            EVENT_TYPE_FIELD_DOC,
+            WRITES_GROUP,
+            6,
+            ConfigDef.Width.SHORT,
+            EVENT_TYPE_FIELD_DISPLAY
+        )
+        .define(
+            DELAY_CONSUME_ENABLE,
+            ConfigDef.Type.BOOLEAN,
+            DELAY_CONSUME_ENABLE_DEFAULT,
+            ConfigDef.Importance.LOW,
+            DELAY_CONSUME_ENABLE_DOC,
+            WRITES_GROUP,
+            7,
+            ConfigDef.Width.SHORT,
+            DELAY_CONSUME_ENABLE_DISPLAY
+        )
+        .define(
+            MAX_DELAY_TIME,
+            ConfigDef.Type.INT,
+            MAX_DELAY_TIME_DEFAULT,
+            ConfigDef.Importance.LOW,
+            MAX_DELAY_TIME_DOC,
+            WRITES_GROUP,
+            8,
+            ConfigDef.Width.MEDIUM,
+            MAX_DELAY_TIME_DISPLAY
+        )
+        .define(
+            MAX_DELAY_BUFFER_SIZE,
+            ConfigDef.Type.INT,
+            MAX_DELAY_BUFFER_SIZE_DEFAULT,
+            ConfigDef.Importance.LOW,
+            MAX_DELAY_BUFFER_SIZE_DOC,
+            WRITES_GROUP,
+            9,
+            ConfigDef.Width.MEDIUM,
+            MAX_DELAY_BUFFER_SIZE_DISPLAY
         )
         // Data Mapping
         .define(
@@ -555,7 +634,12 @@ public class JdbcSinkConfig extends AbstractConfig {
   public final String tableNameFormat;
   public final String tableNameMapping;
   public final int batchSize;
+  public final boolean batchEnabled;
   public final boolean deleteEnabled;
+  public final String eventTypeField;
+  public final boolean delayConsumeEnable;
+  public final int maxDelayTime;
+  public final int maxDelayBufferSize;
   public final int maxRetries;
   public final int retryBackoffMs;
   public final boolean autoCreate;
@@ -581,7 +665,12 @@ public class JdbcSinkConfig extends AbstractConfig {
     tableNameFormat = getString(TABLE_NAME_FORMAT).trim();
     tableNameMapping = getString(TABLE_NAME_MAPPING).trim();
     batchSize = getInt(BATCH_SIZE);
+    batchEnabled = getBoolean(BATCH_ENABLED);
     deleteEnabled = getBoolean(DELETE_ENABLED);
+    eventTypeField = getString(EVENT_TYPE_FIELD);
+    delayConsumeEnable = getBoolean(DELAY_CONSUME_ENABLE);
+    maxDelayTime = getInt(MAX_DELAY_TIME);
+    maxDelayBufferSize = getInt(MAX_DELAY_BUFFER_SIZE);
     maxRetries = getInt(MAX_RETRIES);
     retryBackoffMs = getInt(RETRY_BACKOFF_MS);
     autoCreate = getBoolean(AUTO_CREATE);
@@ -604,6 +693,11 @@ public class JdbcSinkConfig extends AbstractConfig {
       throw new ConfigException(
           "Primary key mode must be 'record_key' when delete support is enabled");
     }
+
+    if (batchEnabled && StringUtils.isEmpty(eventTypeField)) {
+      throw new ConfigException("启用批处理SQL功能时必须提供事件类型字段");
+    }
+
     tableTypes = TableType.parse(getList(TABLE_TYPES_CONFIG));
   }
 
