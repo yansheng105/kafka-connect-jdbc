@@ -92,7 +92,10 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
       Utils.mkSet(
           JSON_TYPE_NAME,
           JSONB_TYPE_NAME,
-          UUID_TYPE_NAME
+          UUID_TYPE_NAME,
+          "date",
+          "time",
+          "timestamp"
       )
   );
 

@@ -118,8 +118,6 @@ public class PreparedStatementBinder implements StatementBinder {
 
   @Override
   public void bindRecords(List<SinkRecord> records) throws SQLException {
-    final Struct valueStruct = (Struct) records.get(0).value();
-    final boolean isDelete = isNull(valueStruct);
     // Assumption: the relevant SQL has placeholders for keyFieldNames first followed by
     //             nonKeyFieldNames, in iteration order for all INSERT/ UPSERT queries
     //             the relevant SQL has placeholders for keyFieldNames,
@@ -129,7 +127,8 @@ public class PreparedStatementBinder implements StatementBinder {
 
     int index = 1;
     for (SinkRecord record : records) {
-      if (isDelete) {
+      Struct valueStruct = (Struct) record.value();
+      if (isNull(valueStruct)) {
         index = bindKeyFields(record, index);
       } else {
         switch (insertMode) {
