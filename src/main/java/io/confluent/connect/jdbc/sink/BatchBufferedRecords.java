@@ -208,11 +208,12 @@ public class BatchBufferedRecords {
       batchUpdate(groupByEventType.get(EventType.UPDATE));
       // 批量删除
       batchDelete(groupByEventType.get(EventType.DELETE));
+      connection.commit();
     }
-    connection.commit();
     // 关闭资源
     close();
     deletesInBatch = false;
+    records = new ArrayList<>();
   }
 
   public void batchInsert(List<SinkRecord> sinkRecords) throws SQLException {
@@ -444,7 +445,7 @@ public class BatchBufferedRecords {
     );
 
     if (isBatch) {
-      deleteStatementBinder.bindRecords(records);
+      deleteStatementBinder.bindRecords(sinkRecords);
     } else {
       for (SinkRecord sinkRecord : sinkRecords) {
         deleteStatementBinder.bindRecord(sinkRecord);
