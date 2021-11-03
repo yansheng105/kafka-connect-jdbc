@@ -15,11 +15,12 @@
 
 package io.confluent.connect.jdbc.dialect;
 
-import io.confluent.connect.jdbc.util.IdentifierRules;
-import io.confluent.connect.jdbc.util.ColumnId;
-import io.confluent.connect.jdbc.util.ExpressionBuilder;
-import io.confluent.connect.jdbc.util.TableDefinition;
 import io.confluent.connect.jdbc.util.TableId;
+import io.confluent.connect.jdbc.util.ColumnId;
+import io.confluent.connect.jdbc.util.TableDefinition;
+import io.confluent.connect.jdbc.util.ExpressionBuilder;
+import io.confluent.connect.jdbc.util.IdentifierRules;
+import io.confluent.connect.jdbc.util.StringUtils;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.connect.data.Date;
 import org.apache.kafka.connect.data.Decimal;
@@ -44,6 +45,11 @@ import org.slf4j.LoggerFactory;
 public class MySqlDatabaseDialect extends GenericDatabaseDialect {
 
   private final Logger log = LoggerFactory.getLogger(MySqlDatabaseDialect.class);
+
+  private final ExpressionBuilder.Transform<ColumnId> transform = (builder, input) -> {
+    String colName = input.name();
+    builder.append("a.").append(colName).append("=b.").append(colName);
+  };
 
   /**
    * The provider for {@link MySqlDatabaseDialect}.
@@ -173,10 +179,6 @@ public class MySqlDatabaseDialect extends GenericDatabaseDialect {
     if (batchSize < 1) {
       return null;
     }
-    final ExpressionBuilder.Transform<ColumnId> transform = (builder, input) -> {
-      String colName = input.name();
-      builder.append("a.").append(colName).append("=b.").append(colName);
-    };
 
     ExpressionBuilder builder = expressionBuilder();
     builder.append("UPDATE ");
@@ -202,6 +204,48 @@ public class MySqlDatabaseDialect extends GenericDatabaseDialect {
         .delimitedBy(",")
         .transformedBy(transform)
         .of(nonKeyColumns);
+    return builder.toString();
+  }
+
+  @Override
+  public String buildBatchDeleteStatement(
+      TableId table,
+      Collection<ColumnId> keyColumns,
+      Collection<ColumnId> nonKeyColumns,
+      TableDefinition definition,
+      int batchSize
+  ) {
+    ExpressionBuilder builder = expressionBuilder();
+    if (keyColumns.size() > 1) {
+      builder.append("DELETE a FROM ");
+      builder.append(table);
+      builder.append(" a INNER JOIN (");
+      for (int i = 0; i < batchSize; i++) {
+        builder.append("SELECT ");
+        builder.appendList()
+            .delimitedBy(",")
+            .transformedBy(ExpressionBuilder.columnNamesWithPrefix("? as "))
+            .of(keyColumns, nonKeyColumns);
+        if (i != batchSize - 1) {
+          builder.append(" UNION ");
+        }
+      }
+      builder.append(") b WHERE ");
+      builder.appendList()
+          .delimitedBy(" AND ")
+          .transformedBy(transform)
+          .of(keyColumns);
+    } else {
+      builder.append("DELETE FROM ");
+      builder.append(table);
+      builder.append(" WHERE ");
+      builder.appendList()
+          .delimitedBy(",")
+          .transformedBy(ExpressionBuilder.columnNames())
+          .of(keyColumns);
+      builder.append(" IN ");
+      builder.append(StringUtils.getPlaceholderString(batchSize));
+    }
     return builder.toString();
   }
 
