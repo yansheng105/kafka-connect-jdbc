@@ -279,9 +279,14 @@ public class JdbcSinkConfig extends AbstractConfig {
       + AUTO_EVOLVE + "``).";
 
   public static final String EVENT_TYPE_FIELD = "event.type.field";
-  private static final String EVENT_TYPE_FIELD_DEFAULT = "";
+  private static final String EVENT_TYPE_FIELD_DEFAULT = "__debezium_event_type__";
   private static final String EVENT_TYPE_FIELD_DOC = "事件类型字段名";
   private static final String EVENT_TYPE_FIELD_DISPLAY = "The event type field name";
+
+  public static final String EVENT_TIME_FIELD = "event.time.field";
+  private static final String EVENT_TIME_FIELD_DEFAULT = "__debezium_event_time__";
+  private static final String EVENT_TIME_FIELD_DOC = "事件时间字段名";
+  private static final String EVENT_TIME_FIELD_DISPLAY = "The event time field name";
 
   public static final String DELAY_CONSUME_ENABLE = "delay.consume.enable";
   private static final String DELAY_CONSUME_ENABLE_DEFAULT = "false";
@@ -443,13 +448,24 @@ public class JdbcSinkConfig extends AbstractConfig {
             EVENT_TYPE_FIELD_DISPLAY
         )
         .define(
+            EVENT_TIME_FIELD,
+            ConfigDef.Type.STRING,
+            EVENT_TIME_FIELD_DEFAULT,
+            ConfigDef.Importance.LOW,
+            EVENT_TIME_FIELD_DOC,
+            WRITES_GROUP,
+            7,
+            ConfigDef.Width.SHORT,
+            EVENT_TIME_FIELD_DISPLAY
+        )
+        .define(
             DELAY_CONSUME_ENABLE,
             ConfigDef.Type.BOOLEAN,
             DELAY_CONSUME_ENABLE_DEFAULT,
             ConfigDef.Importance.LOW,
             DELAY_CONSUME_ENABLE_DOC,
             WRITES_GROUP,
-            7,
+            8,
             ConfigDef.Width.SHORT,
             DELAY_CONSUME_ENABLE_DISPLAY
         )
@@ -460,7 +476,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.LOW,
             MAX_DELAY_TIME_DOC,
             WRITES_GROUP,
-            8,
+            9,
             ConfigDef.Width.MEDIUM,
             MAX_DELAY_TIME_DISPLAY
         )
@@ -471,7 +487,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.LOW,
             MAX_DELAY_BUFFER_SIZE_DOC,
             WRITES_GROUP,
-            9,
+            10,
             ConfigDef.Width.MEDIUM,
             MAX_DELAY_BUFFER_SIZE_DISPLAY
         )
@@ -637,6 +653,7 @@ public class JdbcSinkConfig extends AbstractConfig {
   public final boolean batchEnabled;
   public final boolean deleteEnabled;
   public final String eventTypeField;
+  public final String eventTimeField;
   public final boolean delayConsumeEnable;
   public final int maxDelayTime;
   public final int maxDelayBufferSize;
@@ -668,6 +685,7 @@ public class JdbcSinkConfig extends AbstractConfig {
     batchEnabled = getBoolean(BATCH_ENABLED);
     deleteEnabled = getBoolean(DELETE_ENABLED);
     eventTypeField = getString(EVENT_TYPE_FIELD);
+    eventTimeField = getString(EVENT_TIME_FIELD);
     delayConsumeEnable = getBoolean(DELAY_CONSUME_ENABLE);
     maxDelayTime = getInt(MAX_DELAY_TIME);
     maxDelayBufferSize = getInt(MAX_DELAY_BUFFER_SIZE);
