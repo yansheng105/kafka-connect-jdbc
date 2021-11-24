@@ -610,7 +610,8 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
   protected Transform<ColumnId> columnAAndColumnBWithTypeCast(TableDefinition defn) {
     return (builder, columnId) -> {
       String colName = columnId.name();
-      builder.append("a.").append(colName).append("=b.").append(valueTypeCast(defn, columnId));
+      builder.append("a.").append(colName)
+          .append("=b.").append(colName).append(valueTypeCast(defn, columnId));
     };
   }
 
