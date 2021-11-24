@@ -80,11 +80,6 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
   static final String JSONB_TYPE_NAME = "jsonb";
   static final String UUID_TYPE_NAME = "uuid";
 
-  final ExpressionBuilder.Transform<ColumnId> transform2 = (builder, input) -> {
-    String colName = input.name();
-    builder.append("a.").append(colName).append("=b.").append(colName);
-  };
-
   /**
    * Define the PG datatypes that require casting upon insert/update statements.
    */
@@ -93,6 +88,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
           JSON_TYPE_NAME,
           JSONB_TYPE_NAME,
           UUID_TYPE_NAME,
+          "numeric",
           "date",
           "time",
           "timestamp"
@@ -384,7 +380,8 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
     }
     final ExpressionBuilder.Transform<ColumnId> transform = (builder, input) -> {
       String colName = input.name();
-      builder.append(colName).append("=b.").append(colName);
+      builder.append(colName)
+          .append("=b.").append(colName).append(valueTypeCast(definition, input));
     };
 
     ExpressionBuilder builder = expressionBuilder();
@@ -397,14 +394,8 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
         .of(nonKeyColumns);
     builder.append(" FROM (VALUES ");
 
-    List<String> placeholder = new ArrayList<>();
-    List<ColumnId> allColumns = new ArrayList<>(keyColumns);
-    allColumns.addAll(nonKeyColumns);
-    for (ColumnId columnId : allColumns) {
-      placeholder.add("?" + valueTypeCast(definition, columnId));
-    }
-
-    String placeholderString = "(" + String.join(",", placeholder) + ")";
+    int columns = keyColumns.size() + nonKeyColumns.size();
+    String placeholderString = StringUtils.getPlaceholderString(columns);
     List<String> values = new ArrayList<>(batchSize);
     for (int i = 0; i < batchSize; i++) {
       values.add(placeholderString);
@@ -419,7 +410,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
     builder.append(") WHERE ");
     builder.appendList()
         .delimitedBy(",")
-        .transformedBy(transform2)
+        .transformedBy(columnAWithColumnB())
         .of(keyColumns);
     return builder.toString();
   }
@@ -438,11 +429,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
       builder.append(table);
       builder.append(" a USING (VALUES ");
 
-      List<String> placeholder = new ArrayList<>(keyColumns.size());
-      for (ColumnId keyColumn : keyColumns) {
-        placeholder.add("?" + valueTypeCast(definition, keyColumn));
-      }
-      String placeholderString = "(" + String.join(",", placeholder) + ")";
+      String placeholderString = StringUtils.getPlaceholderString(keyColumns.size());
       List<String> values = new ArrayList<>(batchSize);
       for (int i = 0; i < batchSize; i++) {
         values.add(placeholderString);
@@ -457,7 +444,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
       builder.append(") WHERE ");
       builder.appendList()
           .delimitedBy(" AND ")
-          .transformedBy(transform2)
+          .transformedBy(columnAAndColumnBWithTypeCast(definition))
           .of(keyColumns);
 
     } else {
@@ -611,6 +598,27 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
       }
     }
     return "";
+  }
+
+  protected Transform<ColumnId> columnAWithColumnB() {
+    return (builder, columnId) -> {
+      String colName = columnId.name();
+      builder.append("a.").append(colName).append("=b.").append(colName);
+    };
+  }
+
+  protected Transform<ColumnId> columnAAndColumnBWithTypeCast(TableDefinition defn) {
+    return (builder, columnId) -> {
+      String colName = columnId.name();
+      builder.append("a.").append(colName).append("=b.").append(valueTypeCast(defn, columnId));
+    };
+  }
+
+  protected Transform<ColumnId> columnNamesWithTypeCast(TableDefinition defn) {
+    return (builder, columnId) -> {
+      builder.appendColumnName(columnId.name())
+          .append(valueTypeCast(defn, columnId));
+    };
   }
 
 }
