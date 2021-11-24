@@ -409,7 +409,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
         .of(keyColumns, nonKeyColumns);
     builder.append(") WHERE ");
     builder.appendList()
-        .delimitedBy(",")
+        .delimitedBy(" AND ")
         .transformedBy(columnAWithColumnB())
         .of(keyColumns);
     return builder.toString();
