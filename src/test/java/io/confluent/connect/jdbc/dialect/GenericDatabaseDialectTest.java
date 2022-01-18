@@ -285,7 +285,7 @@ public class GenericDatabaseDialectTest extends BaseDialectTest<GenericDatabaseD
     newDialectFor(TABLE_TYPES, null);
     assertEquals(
         "DELETE FROM \"myTable\" WHERE \"id1\" = ? AND \"id2\" = ?",
-        dialect.buildDeleteStatement(tableId, pkColumns)
+        dialect.buildDeleteStatement(tableId, pkColumns, null)
     );
   }
 

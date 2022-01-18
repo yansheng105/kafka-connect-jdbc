@@ -16,13 +16,12 @@
 package io.confluent.connect.jdbc.dialect;
 
 
-import io.confluent.connect.jdbc.util.StringUtils;
-import io.confluent.connect.jdbc.util.ExpressionBuilder;
-import io.confluent.connect.jdbc.util.IdentifierRules;
+import io.confluent.connect.jdbc.util.TableId;
 import io.confluent.connect.jdbc.util.ColumnId;
 import io.confluent.connect.jdbc.util.ColumnDefinition;
-import io.confluent.connect.jdbc.util.TableId;
 import io.confluent.connect.jdbc.util.TableDefinition;
+import io.confluent.connect.jdbc.util.ExpressionBuilder;
+import io.confluent.connect.jdbc.util.IdentifierRules;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.connect.data.Date;
@@ -34,18 +33,16 @@ import org.apache.kafka.connect.data.Time;
 import org.apache.kafka.connect.data.Timestamp;
 
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.PreparedStatement;
 import java.sql.Types;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
+import java.sql.SQLException;
 import java.util.Arrays;
-import java.util.Set;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Set;
 import java.util.UUID;
+import java.util.Map;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialectProvider.SubprotocolBasedProvider;
 import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
@@ -123,7 +120,6 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
     log.trace("Initializing PreparedStatement fetch direction to FETCH_FORWARD for '{}'", stmt);
     stmt.setFetchDirection(ResultSet.FETCH_FORWARD);
   }
-
 
   @Override
   public String addFieldToSchema(
@@ -318,7 +314,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
       builder.append(" WHERE ");
       builder.appendList()
           .delimitedBy(" AND ")
-          .transformedBy(ExpressionBuilder.columnNamesWith(" = ?"))
+          .transformedBy(this.columnNamesWithValueVariables(definition))
           .of(keyColumns);
     }
     return builder.toString();
@@ -368,98 +364,117 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
   }
 
   @Override
-  public String buildBatchUpdateStatement(
+  public String buildDeleteStatement(
       TableId table,
       Collection<ColumnId> keyColumns,
-      Collection<ColumnId> nonKeyColumns,
-      TableDefinition definition,
-      int batchSize
+      TableDefinition definition
   ) {
-    if (batchSize < 1) {
-      return null;
-    }
-    final ExpressionBuilder.Transform<ColumnId> transform = (builder, input) -> {
-      String colName = input.name();
-      builder.append(colName)
-          .append("=b.").append(colName).append(valueTypeCast(definition, input));
-    };
-
     ExpressionBuilder builder = expressionBuilder();
-    builder.append("UPDATE ");
+    builder.append("DELETE FROM ");
     builder.append(table);
-    builder.append(" a SET ");
-    builder.appendList()
-        .delimitedBy(",")
-        .transformedBy(transform)
-        .of(nonKeyColumns);
-    builder.append(" FROM (VALUES ");
-
-    int columns = keyColumns.size() + nonKeyColumns.size();
-    String placeholderString = StringUtils.getPlaceholderString(columns);
-    List<String> values = new ArrayList<>(batchSize);
-    for (int i = 0; i < batchSize; i++) {
-      values.add(placeholderString);
-    }
-
-    builder.append(String.join(",", values));
-    builder.append(") as b(");
-    builder.appendList()
-        .delimitedBy(",")
-        .transformedBy(ExpressionBuilder.columnNames())
-        .of(keyColumns, nonKeyColumns);
-    builder.append(") WHERE ");
-    builder.appendList()
-        .delimitedBy(" AND ")
-        .transformedBy(columnAWithColumnB())
-        .of(keyColumns);
-    return builder.toString();
-  }
-
-  @Override
-  public String buildBatchDeleteStatement(
-      TableId table,
-      Collection<ColumnId> keyColumns,
-      Collection<ColumnId> nonKeyColumns,
-      TableDefinition definition,
-      int batchSize
-  ) {
-    ExpressionBuilder builder = expressionBuilder();
-    if (keyColumns.size() > 1) {
-      builder.append("DELETE FROM ");
-      builder.append(table);
-      builder.append(" a USING (VALUES ");
-
-      String placeholderString = StringUtils.getPlaceholderString(keyColumns.size());
-      List<String> values = new ArrayList<>(batchSize);
-      for (int i = 0; i < batchSize; i++) {
-        values.add(placeholderString);
-      }
-
-      builder.append(String.join(",", values));
-      builder.append(") as b(");
-      builder.appendList()
-          .delimitedBy(",")
-          .transformedBy(ExpressionBuilder.columnNames())
-          .of(keyColumns);
-      builder.append(") WHERE ");
-      builder.appendList()
-          .delimitedBy(" AND ")
-          .transformedBy(columnAAndColumnBWithTypeCast(definition))
-          .of(keyColumns);
-
-    } else {
-      builder.append("DELETE FROM ");
-      builder.append(table);
+    if (!keyColumns.isEmpty()) {
       builder.append(" WHERE ");
       builder.appendList()
-          .delimitedBy(",")
-          .transformedBy(ExpressionBuilder.columnNames())
+          .delimitedBy(" AND ")
+          .transformedBy(this.columnNamesWithValueVariables(definition))
           .of(keyColumns);
-      builder.append(" IN ");
-      builder.append(StringUtils.getPlaceholderString(batchSize));
     }
     return builder.toString();
   }
+
+  // @Override
+  // public String buildBatchUpdateStatement(
+  //     TableId table,
+  //     Collection<ColumnId> keyColumns,
+  //     Collection<ColumnId> nonKeyColumns,
+  //     TableDefinition definition,
+  //     int batchSize
+  // ) {
+  //   if (batchSize < 1) {
+  //     return null;
+  //   }
+  //   final ExpressionBuilder.Transform<ColumnId> transform = (builder, input) -> {
+  //     String colName = input.name();
+  //     builder.append(colName)
+  //         .append("=b.").append(colName).append(valueTypeCast(definition, input));
+  //   };
+  //
+  //   ExpressionBuilder builder = expressionBuilder();
+  //   builder.append("UPDATE ");
+  //   builder.append(table);
+  //   builder.append(" a SET ");
+  //   builder.appendList()
+  //       .delimitedBy(",")
+  //       .transformedBy(transform)
+  //       .of(nonKeyColumns);
+  //   builder.append(" FROM (VALUES ");
+  //
+  //   int columns = keyColumns.size() + nonKeyColumns.size();
+  //   String placeholderString = StringUtils.getPlaceholderString(columns);
+  //   List<String> values = new ArrayList<>(batchSize);
+  //   for (int i = 0; i < batchSize; i++) {
+  //     values.add(placeholderString);
+  //   }
+  //
+  //   builder.append(String.join(",", values));
+  //   builder.append(") as b(");
+  //   builder.appendList()
+  //       .delimitedBy(",")
+  //       .transformedBy(ExpressionBuilder.columnNames())
+  //       .of(keyColumns, nonKeyColumns);
+  //   builder.append(") WHERE ");
+  //   builder.appendList()
+  //       .delimitedBy(" AND ")
+  //       .transformedBy(columnAWithColumnB())
+  //       .of(keyColumns);
+  //   return builder.toString();
+  // }
+  //
+  // @Override
+  // public String buildBatchDeleteStatement(
+  //     TableId table,
+  //     Collection<ColumnId> keyColumns,
+  //     Collection<ColumnId> nonKeyColumns,
+  //     TableDefinition definition,
+  //     int batchSize
+  // ) {
+  //   ExpressionBuilder builder = expressionBuilder();
+  //   if (keyColumns.size() > 1) {
+  //     builder.append("DELETE FROM ");
+  //     builder.append(table);
+  //     builder.append(" a USING (VALUES ");
+  //
+  //     String placeholderString = StringUtils.getPlaceholderString(keyColumns.size());
+  //     List<String> values = new ArrayList<>(batchSize);
+  //     for (int i = 0; i < batchSize; i++) {
+  //       values.add(placeholderString);
+  //     }
+  //
+  //     builder.append(String.join(",", values));
+  //     builder.append(") as b(");
+  //     builder.appendList()
+  //         .delimitedBy(",")
+  //         .transformedBy(ExpressionBuilder.columnNames())
+  //         .of(keyColumns);
+  //     builder.append(") WHERE ");
+  //     builder.appendList()
+  //         .delimitedBy(" AND ")
+  //         .transformedBy(columnAAndColumnBWithTypeCast(definition))
+  //         .of(keyColumns);
+  //
+  //   } else {
+  //     builder.append("DELETE FROM ");
+  //     builder.append(table);
+  //     builder.append(" WHERE ");
+  //     builder.appendList()
+  //         .delimitedBy(",")
+  //         .transformedBy(ExpressionBuilder.columnNames())
+  //         .of(keyColumns);
+  //     builder.append(" IN ");
+  //     builder.append(StringUtils.getPlaceholderString(batchSize));
+  //   }
+  //   return builder.toString();
+  // }
 
   @Override
   protected void formatColumnValue(
@@ -590,10 +605,11 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
       if (defn != null) {
         String typeName = defn.typeName(); // database-specific
         if (typeName != null) {
-          typeName = typeName.toLowerCase();
-          if (CAST_TYPES.contains(typeName)) {
-            return "::" + typeName;
-          }
+          return "::" + typeName;
+          // typeName = typeName.toLowerCase();
+          // if (CAST_TYPES.contains(typeName)) {
+          //   return "::" + typeName;
+          // }
         }
       }
     }

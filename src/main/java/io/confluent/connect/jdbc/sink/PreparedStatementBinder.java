@@ -117,6 +117,41 @@ public class PreparedStatementBinder implements StatementBinder {
   }
 
   @Override
+  public void bindRecord(SinkRecord record, JdbcSinkConfig.InsertMode mode) throws SQLException {
+    final Struct valueStruct = (Struct) record.value();
+    final boolean isDelete = isNull(valueStruct);
+    // Assumption: the relevant SQL has placeholders for keyFieldNames first followed by
+    //             nonKeyFieldNames, in iteration order for all INSERT/ UPSERT queries
+    //             the relevant SQL has placeholders for keyFieldNames,
+    //             in iteration order for all DELETE queries
+    //             the relevant SQL has placeholders for nonKeyFieldNames first followed by
+    //             keyFieldNames, in iteration order for all UPDATE queries
+
+    int index = 1;
+    if (isDelete) {
+      bindKeyFields(record, index);
+    } else {
+      switch (mode) {
+        case INSERT:
+        case UPSERT:
+        case DELETE_AND_INSERT:
+          index = bindKeyFields(record, index);
+          bindNonKeyFields(record, valueStruct, index);
+          break;
+
+        case UPDATE:
+          index = bindNonKeyFields(record, valueStruct, index);
+          bindKeyFields(record, index);
+          break;
+        default:
+          throw new AssertionError();
+
+      }
+    }
+    statement.addBatch();
+  }
+
+  @Override
   public void bindRecords(List<SinkRecord> records) throws SQLException {
     // Assumption: the relevant SQL has placeholders for keyFieldNames first followed by
     //             nonKeyFieldNames, in iteration order for all INSERT/ UPSERT queries

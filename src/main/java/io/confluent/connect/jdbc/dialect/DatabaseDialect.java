@@ -473,7 +473,8 @@ public interface DatabaseDialect extends ConnectionProvider {
    */
   default String buildDeleteStatement(
       TableId table,
-      Collection<ColumnId> keyColumns
+      Collection<ColumnId> keyColumns,
+      TableDefinition definition
   ) {
     throw new UnsupportedOperationException();
   }
@@ -646,6 +647,8 @@ public interface DatabaseDialect extends ConnectionProvider {
      * @throws SQLException if there is a problem binding values into the statement
      */
     void bindRecord(SinkRecord record) throws SQLException;
+
+    void bindRecord(SinkRecord record, JdbcSinkConfig.InsertMode insertMode) throws SQLException;
 
     void bindRecords(List<SinkRecord> records) throws SQLException;
   }

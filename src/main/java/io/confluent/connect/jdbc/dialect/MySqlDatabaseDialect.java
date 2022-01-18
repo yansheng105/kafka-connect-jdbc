@@ -225,7 +225,7 @@ public class MySqlDatabaseDialect extends GenericDatabaseDialect {
         builder.appendList()
             .delimitedBy(",")
             .transformedBy(ExpressionBuilder.columnNamesWithPrefix("? as "))
-            .of(keyColumns, nonKeyColumns);
+            .of(keyColumns);
         if (i != batchSize - 1) {
           builder.append(" UNION ");
         }

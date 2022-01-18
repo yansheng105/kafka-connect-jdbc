@@ -29,6 +29,7 @@ import java.sql.SQLException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialect;
 import io.confluent.connect.jdbc.dialect.DatabaseDialects;
@@ -132,6 +133,8 @@ public class JdbcSinkTask extends SinkTask {
           for (Throwable e : sqle) {
             log.debug("Exception {}:", exceptionCount++, e);
           }
+          log.error("Error messages:{}", records.stream().map(SinkRecord::toString)
+              .collect(Collectors.joining("\n")));
           throw new ConnectException(sqlAllMessagesException);
         }
       }

@@ -21,6 +21,7 @@ import io.confluent.connect.jdbc.sink.metadata.FieldsMetadata;
 import io.confluent.connect.jdbc.sink.metadata.SchemaPair;
 import io.confluent.connect.jdbc.util.ColumnId;
 import io.confluent.connect.jdbc.util.TableId;
+import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -45,6 +46,7 @@ import java.util.stream.Collectors;
 
 
 import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.INSERT;
+import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.UPDATE;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
@@ -180,7 +182,18 @@ public class BatchBufferedRecords {
     log.info("Flushing {} buffered records", records.size());
 
     Map<String, List<SinkRecord>> groupByPrimaryKey = records.stream()
-        .collect(Collectors.groupingBy(this::getPrimaryKeyValues));
+        .filter(x -> {
+          EventType eventType = getEventType(x);
+          switch (eventType) {
+            case INSERT:
+            case UPDATE:
+            case DELETE:
+              return true;
+            default:
+              break;
+          }
+          return false;
+        }).collect(Collectors.groupingBy(this::getPrimaryKeyValues));
     List<ConcurrentLinkedQueue<SinkRecord>> collect = groupByPrimaryKey.values().stream()
         .map((Function<List<SinkRecord>, ConcurrentLinkedQueue<SinkRecord>>)
             ConcurrentLinkedQueue::new)
@@ -384,14 +397,17 @@ public class BatchBufferedRecords {
       updateStatementBinder.bindRecords(sinkRecords);
     } else {
       for (SinkRecord sinkRecord : sinkRecords) {
-        updateStatementBinder.bindRecord(sinkRecord);
+        updateStatementBinder.bindRecord(sinkRecord, UPDATE);
       }
     }
 
     Optional<Long> totalUpdateCount = executeUpdates(updatePreparedStatement);
-    log.info("{} records:{} resulting in totalUpdateCount:{}",
-        config.insertMode, sinkRecords.size(), totalUpdateCount
-    );
+    if (totalUpdateCount.isPresent()) {
+      Long total = totalUpdateCount.get();
+      log.info("{} records:{} resulting in totalUpdateCount:{}",
+          config.insertMode, sinkRecords.size(), total
+      );
+    }
     if (totalUpdateCount.filter(total -> total != sinkRecords.size()).isPresent()
         && config.insertMode == INSERT) {
       throw new ConnectException(String.format(
@@ -458,7 +474,7 @@ public class BatchBufferedRecords {
     );
   }
 
-  private String getDeleteSql() {
+  private String getDeleteSql() throws SQLException {
     String sql = null;
     if (config.deleteEnabled) {
       if (config.pkMode == JdbcSinkConfig.PrimaryKeyMode.RECORD_KEY) {
@@ -468,7 +484,8 @@ public class BatchBufferedRecords {
         try {
           sql = dbDialect.buildDeleteStatement(
               tableId,
-              asColumns(fieldsMetadata.keyFieldNames)
+              asColumns(fieldsMetadata.keyFieldNames),
+              dbStructure.tableDefinition(connection, tableId)
           );
         } catch (UnsupportedOperationException e) {
           throw new ConnectException(String.format(
@@ -551,9 +568,17 @@ public class BatchBufferedRecords {
           assert fieldsMetadata.keyFieldNames.size() == 1;
           return record.key().toString();
         } else {
-          return fieldsMetadata.keyFieldNames.stream()
-              .map(x -> ((Struct) record.key()).get(schemaPair.keySchema.field(x)).toString())
-              .collect(Collectors.joining("_"));
+          try {
+            return fieldsMetadata.keyFieldNames.stream()
+                .map(x -> ((Struct) record.key()).get(schemaPair.keySchema.field(x)).toString())
+                .collect(Collectors.joining("_"));
+          } catch (Exception e) {
+            String fields = schemaPair.keySchema.fields().stream().map(Field::name)
+                .collect(Collectors.joining(","));
+            log.error("获取主键字段的值异常：record.key():[{}], fields:[{}], record:{}",
+                record.key(), fields, record);
+            throw e;
+          }
         }
       }
 
