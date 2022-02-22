@@ -100,6 +100,7 @@ public class PreparedStatementBinder implements StatementBinder {
         case INSERT:
         case UPSERT:
         case DELETE_AND_INSERT:
+        case DELETE2INSERT:
           index = bindKeyFields(record, index);
           bindNonKeyFields(record, valueStruct, index);
           break;
@@ -135,6 +136,7 @@ public class PreparedStatementBinder implements StatementBinder {
         case INSERT:
         case UPSERT:
         case DELETE_AND_INSERT:
+        case DELETE2INSERT:
           index = bindKeyFields(record, index);
           bindNonKeyFields(record, valueStruct, index);
           break;
@@ -170,6 +172,7 @@ public class PreparedStatementBinder implements StatementBinder {
           case INSERT:
           case UPSERT:
           case DELETE_AND_INSERT:
+          case DELETE2INSERT:
             index = bindKeyFields(record, index);
             index = bindNonKeyFields(record, valueStruct, index);
             break;

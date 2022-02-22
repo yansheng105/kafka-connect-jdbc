@@ -47,6 +47,7 @@ import java.util.stream.Collectors;
 
 import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.INSERT;
 import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.UPDATE;
+import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.DELETE2INSERT;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
@@ -596,6 +597,9 @@ public class BatchBufferedRecords {
 
   private EventType getEventType(SinkRecord record) {
     if (isNull(record.value())) {
+      if (config.insertMode == DELETE2INSERT) {
+        return EventType.INSERT;
+      }
       return EventType.DELETE;
     } else {
       String eventType = ((Struct) record.value()).getString(config.eventTypeField);
@@ -608,6 +612,9 @@ public class BatchBufferedRecords {
         return EventType.UPDATE;
       } else if (eventType.equalsIgnoreCase("d")
           || eventType.equalsIgnoreCase("delete")) {
+        if (config.insertMode == DELETE2INSERT) {
+          return EventType.INSERT;
+        }
         return EventType.DELETE;
       } else {
         return EventType.OTHER;

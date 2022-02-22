@@ -15,6 +15,8 @@
 
 package io.confluent.connect.jdbc.sink;
 
+import io.confluent.connect.jdbc.util.StringUtils;
+import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.SinkRecord;
 
@@ -69,7 +71,7 @@ public class JdbcDbWriter {
       if (config.batchEnabled) {
         final Map<TableId, BatchBufferedRecords> bufferByTable = new HashMap<>();
         for (SinkRecord record : records) {
-          final TableId tableId = destinationTable(record.topic());
+          final TableId tableId = destinationTable(record);
           BatchBufferedRecords buffer = bufferByTable.get(tableId);
           if (buffer == null) {
             buffer = new BatchBufferedRecords(config, tableId, dbDialect, dbStructure, connection);
@@ -87,7 +89,7 @@ public class JdbcDbWriter {
       } else {
         final Map<TableId, BufferedRecords> bufferByTable = new HashMap<>();
         for (SinkRecord record : records) {
-          final TableId tableId = destinationTable(record.topic());
+          final TableId tableId = destinationTable(record);
           BufferedRecords buffer = bufferByTable.get(tableId);
           if (buffer == null) {
             buffer = new BufferedRecords(config, tableId, dbDialect, dbStructure, connection);
@@ -118,7 +120,15 @@ public class JdbcDbWriter {
     cachedConnectionProvider.close();
   }
 
-  TableId destinationTable(String topic) {
+  TableId destinationTable(SinkRecord record) {
+    if (!StringUtils.isEmpty(config.tableNameField)) {
+      String tableName = ((Struct) record.value()).getString(config.tableNameField);
+      if (!StringUtils.isEmpty(config.tableSchema)) {
+        tableName = config.tableSchema + "." + tableName;
+      }
+      return dbDialect.parseTableIdentifier(tableName);
+    }
+    String topic = record.topic();
     if (tableNameMapping.isEmpty()) {
       final String tableName = config.tableNameFormat.replace("${topic}", topic);
       if (tableName.isEmpty()) {

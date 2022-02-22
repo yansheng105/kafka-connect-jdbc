@@ -49,7 +49,8 @@ public class JdbcSinkConfig extends AbstractConfig {
     INSERT,
     UPSERT,
     UPDATE,
-    DELETE_AND_INSERT;
+    DELETE_AND_INSERT,
+    DELETE2INSERT;
 
   }
 
@@ -120,6 +121,16 @@ public class JdbcSinkConfig extends AbstractConfig {
           + "For example: when the `order` table is mapped to topic mysql_order and oracle_order, "
           + "it should be configured like this: ``order:kafka_mysql_order,kafka_oracle_order``";
   private static final String TABLE_NAME_MAPPING_DISPLAY = "Table Name Mapping";
+
+  public static final String TABLE_NAME_FIELD = "table.name.field";
+  private static final String TABLE_NAME_FIELD_DEFAULT = "";
+  private static final String TABLE_NAME_FIELD_DOC = "topic消息中用于指定表名的字段名，物理删除事件监听使用";
+  private static final String TABLE_NAME_FIELD_DISPLAY = "Table Name Field";
+
+  public static final String TABLE_SCHEMA = "table.schema";
+  private static final String TABLE_SCHEMA_DEFAULT = "";
+  private static final String TABLE_SCHEMA_DOC = "用于指定目标表所属的模式名，物理删除事件监听使用";
+  private static final String TABLE_SCHEMA_DISPLAY = "Table Name Field";
 
   public static final String MAX_RETRIES = "max.retries";
   private static final int MAX_RETRIES_DEFAULT = 10;
@@ -516,6 +527,28 @@ public class JdbcSinkConfig extends AbstractConfig {
             TABLE_NAME_MAPPING_DISPLAY
         )
         .define(
+            TABLE_NAME_FIELD,
+            ConfigDef.Type.STRING,
+            TABLE_NAME_FIELD_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            TABLE_NAME_FIELD_DOC,
+            DATAMAPPING_GROUP,
+            3,
+            ConfigDef.Width.LONG,
+            TABLE_NAME_FIELD_DISPLAY
+        )
+        .define(
+            TABLE_SCHEMA,
+            ConfigDef.Type.STRING,
+            TABLE_SCHEMA_DEFAULT,
+            ConfigDef.Importance.MEDIUM,
+            TABLE_SCHEMA_DOC,
+            DATAMAPPING_GROUP,
+            4,
+            ConfigDef.Width.LONG,
+            TABLE_SCHEMA_DISPLAY
+        )
+        .define(
             PK_MODE,
             ConfigDef.Type.STRING,
             PK_MODE_DEFAULT,
@@ -523,7 +556,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.HIGH,
             PK_MODE_DOC,
             DATAMAPPING_GROUP,
-            3,
+            5,
             ConfigDef.Width.MEDIUM,
             PK_MODE_DISPLAY,
             PrimaryKeyModeRecommender.INSTANCE
@@ -535,7 +568,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.MEDIUM,
             PK_FIELDS_DOC,
             DATAMAPPING_GROUP,
-            4,
+            6,
             ConfigDef.Width.LONG, PK_FIELDS_DISPLAY
         )
         .define(
@@ -545,7 +578,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.MEDIUM,
             FIELDS_WHITELIST_DOC,
             DATAMAPPING_GROUP,
-            5,
+            7,
             ConfigDef.Width.LONG,
             FIELDS_WHITELIST_DISPLAY
         )
@@ -556,7 +589,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.MEDIUM,
             FIELDS_BLACKLIST_DOC,
             DATAMAPPING_GROUP,
-            6,
+            8,
             ConfigDef.Width.LONG,
             FIELDS_BLACKLIST_DISPLAY
         )
@@ -567,7 +600,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.MEDIUM,
             ADD_FIELDS_DOC,
             DATAMAPPING_GROUP,
-            7,
+            9,
             ConfigDef.Width.LONG,
             ADD_FIELDS_DISPLAY
         )
@@ -579,7 +612,7 @@ public class JdbcSinkConfig extends AbstractConfig {
             ConfigDef.Importance.MEDIUM,
             DB_TIMEZONE_CONFIG_DOC,
             DATAMAPPING_GROUP,
-            8,
+            10,
             ConfigDef.Width.MEDIUM,
             DB_TIMEZONE_CONFIG_DISPLAY
         )
@@ -649,6 +682,8 @@ public class JdbcSinkConfig extends AbstractConfig {
   public final long connectionBackoffMs;
   public final String tableNameFormat;
   public final String tableNameMapping;
+  public final String tableNameField;
+  public final String tableSchema;
   public final int batchSize;
   public final boolean batchEnabled;
   public final boolean deleteEnabled;
@@ -681,6 +716,8 @@ public class JdbcSinkConfig extends AbstractConfig {
     connectionBackoffMs = getLong(CONNECTION_BACKOFF);
     tableNameFormat = getString(TABLE_NAME_FORMAT).trim();
     tableNameMapping = getString(TABLE_NAME_MAPPING).trim();
+    tableNameField = getString(TABLE_NAME_FIELD).trim();
+    tableSchema = getString(TABLE_SCHEMA).trim();
     batchSize = getInt(BATCH_SIZE);
     batchEnabled = getBoolean(BATCH_ENABLED);
     deleteEnabled = getBoolean(DELETE_ENABLED);
