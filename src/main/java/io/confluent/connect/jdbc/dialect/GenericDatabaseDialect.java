@@ -110,6 +110,10 @@ public class GenericDatabaseDialect implements DatabaseDialect {
 
   private static final String PRECISION_FIELD = "connect.decimal.precision";
 
+  protected static final String COLUMN_TYPE_KEY = "__debezium.source.column.type";
+  protected static final String COLUMN_LENGTH_KEY = "__debezium.source.column.length";
+  protected static final String COLUMN_SCALE_KEY = "__debezium.source.column.scale";
+
   /**
    * The provider for {@link GenericDatabaseDialect}.
    */
@@ -264,7 +268,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
     if (jdbcDriverInfo().jdbcMajorVersion() >= 4) {
       return connection.isValid(timeout);
     }
-    // issue a test query ...
+    // issue a test.txt query ...
     String query = checkConnectionQuery();
     if (query != null) {
       try (Statement statement = connection.createStatement()) {

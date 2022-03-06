@@ -257,6 +257,9 @@ public class PreparedStatementBinder implements StatementBinder {
   protected void bindField(int index, Schema schema, Object value, String fieldName)
       throws SQLException {
     ColumnDefinition colDef = tabDef == null ? null : tabDef.definitionForColumn(fieldName);
+    if (value instanceof String) {
+      value = ((String) value).replace("\0", "");
+    }
     dialect.bindField(statement, index, schema, value, colDef);
   }
 }

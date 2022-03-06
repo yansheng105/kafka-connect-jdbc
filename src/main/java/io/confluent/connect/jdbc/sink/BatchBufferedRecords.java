@@ -180,8 +180,8 @@ public class BatchBufferedRecords {
       log.debug("Records is empty");
       return;
     }
-    log.info("Flushing {} buffered records", records.size());
-
+    // log.info("Flushing {} buffered records", records.size());
+    // 先按主键分组，此时主键相同的消息均在一个list中
     Map<String, List<SinkRecord>> groupByPrimaryKey = records.stream()
         .filter(x -> {
           EventType eventType = getEventType(x);
@@ -201,6 +201,7 @@ public class BatchBufferedRecords {
         .collect(Collectors.toList());
     while (true) {
       List<SinkRecord> recordsList = new ArrayList<>();
+      // 遍历所有不同主键的消息列表，取出第一条消息
       for (ConcurrentLinkedQueue<SinkRecord> sinkRecords : collect) {
         SinkRecord poll = sinkRecords.poll();
         if (null != poll) {
@@ -210,18 +211,28 @@ public class BatchBufferedRecords {
       if (recordsList.isEmpty()) {
         break;
       }
-
+      // 将不同主键的消息按事件类型分组
       Map<EventType, List<SinkRecord>> groupByEventType = recordsList.stream()
           .collect(Collectors.groupingBy(this::getEventType));
 
-      // TODO 增加事件时间，将同主键数据按事件时间排序后执行，确保顺序性
+      // 只需保证相同主键的事件顺序性即可保证数据一致性
+      // 所有相同主键的事件均会分配到同一个分区，且每个任务消费一个分区，因此不会造成数据错乱
 
       // 批量插入
-      batchInsert(groupByEventType.get(EventType.INSERT));
+      List<SinkRecord> insert = groupByEventType.get(EventType.INSERT);
+      if (null != insert && !insert.isEmpty()) {
+        batchInsert(insert);
+      }
       // 批量更新
-      batchUpdate(groupByEventType.get(EventType.UPDATE));
+      List<SinkRecord> update = groupByEventType.get(EventType.UPDATE);
+      if (null != update && !update.isEmpty()) {
+        batchUpdate(update);
+      }
       // 批量删除
-      batchDelete(groupByEventType.get(EventType.DELETE));
+      List<SinkRecord> delete = groupByEventType.get(EventType.DELETE);
+      if (null != delete && !delete.isEmpty()) {
+        batchDelete(delete);
+      }
       connection.commit();
     }
     // 关闭资源
@@ -231,11 +242,6 @@ public class BatchBufferedRecords {
   }
 
   public void batchInsert(List<SinkRecord> sinkRecords) throws SQLException {
-    if (null == sinkRecords || sinkRecords.isEmpty()) {
-      log.debug("no data need to execute batch insert");
-      return;
-    }
-
     boolean isPostgreSql = dbDialect.name().equalsIgnoreCase("PostgreSql");
     String insertSql = dbDialect.buildInsertStatement(
         tableId,
@@ -270,19 +276,24 @@ public class BatchBufferedRecords {
       if (isPostgreSql) {
         savepoint = connection.setSavepoint();
       }
+      long start = System.currentTimeMillis();
       Optional<Long> totalInsertCount = executeUpdates(insertPreparedStatement);
-      log.info("{} records:{} resulting in totalUpdateCount:{}",
-          config.insertMode, sinkRecords.size(), totalInsertCount
-      );
-      if (totalInsertCount.filter(total -> total != sinkRecords.size()).isPresent()
-          && config.insertMode == INSERT) {
-        throw new ConnectException(String.format(
-            "Update count (%d) did not sum up to total number of records inserted (%d)",
-            totalInsertCount.get(),
-            sinkRecords.size()
-        ));
-      }
-      if (!totalInsertCount.isPresent()) {
+      if (totalInsertCount.isPresent()) {
+        long cost = System.currentTimeMillis() - start;
+        if (cost > 500) {
+          log.warn("{} records:{} resulting in totalInsertCount:{} cost {}ms",
+              config.insertMode, sinkRecords.size(), totalInsertCount.get(), cost
+          );
+        }
+        if (totalInsertCount.filter(total -> total != sinkRecords.size()).isPresent()
+            && config.insertMode == INSERT) {
+          throw new ConnectException(String.format(
+              "Update count (%d) did not sum up to total number of records inserted (%d)",
+              totalInsertCount.get(),
+              sinkRecords.size()
+          ));
+        }
+      } else {
         log.info(
             "{} records:{} , but no count of the number of rows it affected is available",
             config.insertMode,
@@ -314,7 +325,9 @@ public class BatchBufferedRecords {
             savepoint = connection.setSavepoint();
           }
           try {
+            long start = System.currentTimeMillis();
             insertPreparedStatement.executeUpdate();
+            log.info("insert one record cost {}ms", System.currentTimeMillis() - start);
           } catch (SQLException ex) {
             if (ex.getMessage().contains("duplicate key")
                 || ex.getMessage().contains("Duplicate entry")
@@ -322,7 +335,6 @@ public class BatchBufferedRecords {
               if (isPostgreSql && null != savepoint) {
                 connection.rollback(savepoint);
               }
-              log.warn("忽略主键冲突：{}", sinkRecord);
             } else {
               log.error("批量插入失败后尝试逐条执行时发生异常：", ex);
               throw ex;
@@ -338,11 +350,6 @@ public class BatchBufferedRecords {
   }
 
   public void batchUpdate(List<SinkRecord> sinkRecords) throws SQLException {
-    if (null == sinkRecords || sinkRecords.isEmpty()) {
-      log.debug("no data need to execute batch update");
-      return;
-    }
-
     boolean isBatch = true;
     String updateSql;
     try {
@@ -355,7 +362,6 @@ public class BatchBufferedRecords {
           sinkRecords.size()
       );
     } catch (Exception e) {
-      log.warn("当前数据库：{} 不支持批量更新", dbDialect.name());
       isBatch = false;
       updateSql = dbDialect.buildUpdateStatement(
           tableId,
@@ -402,12 +408,15 @@ public class BatchBufferedRecords {
       }
     }
 
+    long start = System.currentTimeMillis();
     Optional<Long> totalUpdateCount = executeUpdates(updatePreparedStatement);
     if (totalUpdateCount.isPresent()) {
-      Long total = totalUpdateCount.get();
-      log.info("{} records:{} resulting in totalUpdateCount:{}",
-          config.insertMode, sinkRecords.size(), total
-      );
+      long cost = System.currentTimeMillis() - start;
+      if (cost > 500) {
+        log.warn("{} records:{} resulting in totalUpdateCount:{} cost {}ms",
+            config.insertMode, sinkRecords.size(), totalUpdateCount.get(), cost
+        );
+      }
     }
     if (totalUpdateCount.filter(total -> total != sinkRecords.size()).isPresent()
         && config.insertMode == INSERT) {
@@ -427,11 +436,6 @@ public class BatchBufferedRecords {
   }
 
   public void batchDelete(List<SinkRecord> sinkRecords) throws SQLException {
-    if (null == sinkRecords || sinkRecords.isEmpty()) {
-      log.debug("no data need to execute batch delete");
-      return;
-    }
-
     boolean isBatch = true;
     String deleteSql;
     try {
@@ -443,7 +447,6 @@ public class BatchBufferedRecords {
           sinkRecords.size()
       );
     } catch (Exception e) {
-      log.warn("当前数据库：{} 不支持批量删除", dbDialect.name());
       isBatch = false;
       deleteSql = getDeleteSql();
     }
@@ -469,10 +472,14 @@ public class BatchBufferedRecords {
       }
     }
 
+    long start = System.currentTimeMillis();
     long totalDeleteCount = executeDeletes();
-    log.info("{} records:{} resulting in  totalDeleteCount:{}",
-        config.insertMode, sinkRecords.size(), totalDeleteCount
-    );
+    long cost = System.currentTimeMillis() - start;
+    if (cost > 500) {
+      log.warn("{} records:{} resulting in  totalDeleteCount:{} cost {}ms",
+          config.insertMode, sinkRecords.size(), totalDeleteCount, cost
+      );
+    }
   }
 
   private String getDeleteSql() throws SQLException {

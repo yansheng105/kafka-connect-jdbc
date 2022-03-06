@@ -22,8 +22,8 @@ import io.confluent.connect.jdbc.util.ExpressionBuilder;
 import io.confluent.connect.jdbc.util.IdentifierRules;
 import io.confluent.connect.jdbc.util.StringUtils;
 import org.apache.kafka.common.config.AbstractConfig;
-import org.apache.kafka.connect.data.Date;
 import org.apache.kafka.connect.data.Decimal;
+import org.apache.kafka.connect.data.Date;
 import org.apache.kafka.connect.data.Time;
 import org.apache.kafka.connect.data.Timestamp;
 
@@ -32,6 +32,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collection;
+import java.util.Map;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialectProvider.SubprotocolBasedProvider;
 import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
@@ -96,43 +97,56 @@ public class MySqlDatabaseDialect extends GenericDatabaseDialect {
 
   @Override
   protected String getSqlType(SinkRecordField field) {
-    if (field.schemaName() != null) {
-      switch (field.schemaName()) {
-        case Decimal.LOGICAL_NAME:
-          // Maximum precision supported by MySQL is 65
-          int scale = Integer.parseInt(field.schemaParameters().get(Decimal.SCALE_FIELD));
-          return "DECIMAL(65," + scale + ")";
-        case Date.LOGICAL_NAME:
-          return "DATE";
-        case Time.LOGICAL_NAME:
-          return "TIME(3)";
-        case Timestamp.LOGICAL_NAME:
-          return "DATETIME(3)";
-        default:
-          // pass through to primitive types
+    Map<String, String> col = field.schemaParameters();
+    // 从schema中获取字段信息，目前仅支持mysql数据源
+    if (null != col && col.containsKey(COLUMN_TYPE_KEY)) {
+      String type = col.get(COLUMN_TYPE_KEY).toUpperCase();
+      if (col.containsKey(COLUMN_LENGTH_KEY)) {
+        if (col.containsKey(COLUMN_SCALE_KEY)) {
+          type += "(" + col.get(COLUMN_LENGTH_KEY) + "," + col.get(COLUMN_SCALE_KEY) + ")";
+        } else {
+          type += "(" + col.get(COLUMN_LENGTH_KEY) + ")";
+        }
       }
-    }
-    switch (field.schemaType()) {
-      case INT8:
-        return "TINYINT";
-      case INT16:
-        return "SMALLINT";
-      case INT32:
-        return "INT";
-      case INT64:
-        return "BIGINT";
-      case FLOAT32:
-        return "FLOAT";
-      case FLOAT64:
-        return "DOUBLE";
-      case BOOLEAN:
-        return "TINYINT";
-      case STRING:
-        return "TEXT";
-      case BYTES:
-        return "VARBINARY(1024)";
-      default:
-        return super.getSqlType(field);
+      return type;
+    } else {
+      if (field.schemaName() != null) {
+        switch (field.schemaName()) {
+          case Decimal.LOGICAL_NAME:
+            // Maximum precision supported by MySQL is 65
+            int scale = Integer.parseInt(field.schemaParameters().get(Decimal.SCALE_FIELD));
+            return "DECIMAL(65," + scale + ")";
+          case Date.LOGICAL_NAME:
+            return "DATE";
+          case Time.LOGICAL_NAME:
+            return "TIME(3)";
+          case Timestamp.LOGICAL_NAME:
+            return "DATETIME(3)";
+          default:
+            // pass through to primitive types
+        }
+      }
+      switch (field.schemaType()) {
+        case INT8:
+        case BOOLEAN:
+          return "TINYINT";
+        case INT16:
+          return "SMALLINT";
+        case INT32:
+          return "INT";
+        case INT64:
+          return "BIGINT";
+        case FLOAT32:
+          return "FLOAT";
+        case FLOAT64:
+          return "DOUBLE";
+        case STRING:
+          return "TEXT";
+        case BYTES:
+          return "VARBINARY(1024)";
+        default:
+          return super.getSqlType(field);
+      }
     }
   }
 
