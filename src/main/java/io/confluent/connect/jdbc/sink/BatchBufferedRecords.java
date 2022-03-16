@@ -48,6 +48,7 @@ import java.util.stream.Collectors;
 import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.INSERT;
 import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.UPDATE;
 import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.DELETE2INSERT;
+import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.DELETE_AND_INSERT;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
@@ -218,20 +219,42 @@ public class BatchBufferedRecords {
       // 只需保证相同主键的事件顺序性即可保证数据一致性
       // 所有相同主键的事件均会分配到同一个分区，且每个任务消费一个分区，因此不会造成数据错乱
 
-      // 批量插入
-      List<SinkRecord> insert = groupByEventType.get(EventType.INSERT);
-      if (null != insert && !insert.isEmpty()) {
-        batchInsert(insert);
-      }
-      // 批量更新
-      List<SinkRecord> update = groupByEventType.get(EventType.UPDATE);
-      if (null != update && !update.isEmpty()) {
-        batchUpdate(update);
+      List<SinkRecord> insert = groupByEventType.getOrDefault(EventType.INSERT, new ArrayList<>());
+      List<SinkRecord> update = groupByEventType.getOrDefault(EventType.UPDATE, new ArrayList<>());
+      List<SinkRecord> delete = groupByEventType.getOrDefault(EventType.DELETE, new ArrayList<>());
+
+      // 将update转换为delete + insert，以实现upsert的效果
+      if (config.insertMode == DELETE_AND_INSERT) {
+        if (!update.isEmpty()) {
+          update.forEach(rcd -> {
+            delete.add(new SinkRecord(
+                rcd.topic(),
+                rcd.kafkaPartition(),
+                rcd.keySchema(),
+                rcd.key(),
+                null,
+                null,
+                rcd.kafkaOffset(),
+                rcd.timestamp(),
+                rcd.timestampType(),
+                rcd.headers()
+            ));
+            insert.add(rcd);
+          });
+        }
+      } else {
+        // 批量更新
+        if (!update.isEmpty()) {
+          batchUpdate(update);
+        }
       }
       // 批量删除
-      List<SinkRecord> delete = groupByEventType.get(EventType.DELETE);
-      if (null != delete && !delete.isEmpty()) {
+      if (!delete.isEmpty()) {
         batchDelete(delete);
+      }
+      // 批量插入
+      if (!insert.isEmpty()) {
+        batchInsert(insert);
       }
       connection.commit();
     }
@@ -325,9 +348,7 @@ public class BatchBufferedRecords {
             savepoint = connection.setSavepoint();
           }
           try {
-            long start = System.currentTimeMillis();
             insertPreparedStatement.executeUpdate();
-            log.info("insert one record cost {}ms", System.currentTimeMillis() - start);
           } catch (SQLException ex) {
             if (ex.getMessage().contains("duplicate key")
                 || ex.getMessage().contains("Duplicate entry")
