@@ -24,7 +24,10 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialect;
 import io.confluent.connect.jdbc.util.CachedConnectionProvider;
@@ -40,6 +43,7 @@ public class JdbcDbWriter {
   private final DbStructure dbStructure;
   final CachedConnectionProvider cachedConnectionProvider;
   private final Map<String,String> tableNameMapping;
+  public final static ConcurrentHashMap<Long, SinkRecord> special = new ConcurrentHashMap<>();
 
   JdbcDbWriter(final JdbcSinkConfig config, DatabaseDialect dbDialect, DbStructure dbStructure) {
     this.config = config;

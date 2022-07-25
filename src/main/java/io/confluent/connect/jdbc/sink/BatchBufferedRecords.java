@@ -34,21 +34,13 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Savepoint;
 import java.sql.PreparedStatement;
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Optional;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Collection;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 
-import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.INSERT;
-import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.UPDATE;
-import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.DELETE2INSERT;
-import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.DELETE_AND_INSERT;
+import static io.confluent.connect.jdbc.sink.JdbcSinkConfig.InsertMode.*;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
@@ -89,7 +81,7 @@ public class BatchBufferedRecords {
   private List<SinkRecord> records = new ArrayList<>();
   private Schema keySchema;
   private Schema valueSchema;
-  private RecordValidator recordValidator;
+  private final RecordValidator recordValidator;
   private FieldsMetadata fieldsMetadata;
   private PreparedStatement insertPreparedStatement;
   private PreparedStatement updatePreparedStatement;
@@ -196,6 +188,7 @@ public class BatchBufferedRecords {
           }
           return false;
         }).collect(Collectors.groupingBy(this::getPrimaryKeyValues));
+
     List<ConcurrentLinkedQueue<SinkRecord>> collect = groupByPrimaryKey.values().stream()
         .map((Function<List<SinkRecord>, ConcurrentLinkedQueue<SinkRecord>>)
             ConcurrentLinkedQueue::new)
@@ -258,6 +251,50 @@ public class BatchBufferedRecords {
       }
       connection.commit();
     }
+    // 处理发生过主键冲突的数据
+    if (!JdbcDbWriter.special.isEmpty()) {
+      Long firstTime = records.get(0).timestamp();
+      List<SinkRecord> retry = new ArrayList<>();
+      for (SinkRecord record : JdbcDbWriter.special.values()) {
+        List<SinkRecord> sinkRecords = groupByPrimaryKey.get(getPrimaryKeyValues(record));
+        if (null == sinkRecords || sinkRecords.isEmpty()) {
+          continue;
+        }
+        sinkRecords.remove(record);
+        for (SinkRecord sinkRecord : sinkRecords) {
+          if (EventType.DELETE != getEventType(sinkRecord)) {
+            continue;
+          }
+          // 删除事件与主键冲突的插入事件相隔5s内则执行插入重试
+          long diff = Math.abs(sinkRecord.timestamp() - record.timestamp());
+          if (diff <= 3000) {
+            retry.add(record);
+          } else {
+            log.info("主键冲突的数据删除时间间隔为【{}】",diff);
+          }
+        }
+      }
+
+      // 重新插入
+      if (!retry.isEmpty()) {
+        log.info("主键冲突重试：【{}】条", retry.size());
+        batchInsert(retry);
+        connection.commit();
+        // 移除重试过的数据
+        for (SinkRecord record : retry) {
+          JdbcDbWriter.special.remove(record.kafkaOffset());
+        }
+        retry.clear();
+      }
+      // 移除超时的数据
+      List<Long> timeout = JdbcDbWriter.special.values().stream()
+              .filter(x -> Math.abs(firstTime - x.timestamp()) > 10000)
+              .map(SinkRecord::kafkaOffset).collect(Collectors.toList());
+      for (Long key : timeout) {
+        JdbcDbWriter.special.remove(key);
+      }
+      log.info("主键冲突待处理数据量：【{}】", JdbcDbWriter.special.size());
+    }
     // 关闭资源
     close();
     deletesInBatch = false;
@@ -266,10 +303,22 @@ public class BatchBufferedRecords {
 
   public void batchInsert(List<SinkRecord> sinkRecords) throws SQLException {
     boolean isPostgreSql = dbDialect.name().equalsIgnoreCase("PostgreSql");
+    SchemaPair schemaPair = new SchemaPair(
+        sinkRecords.get(0).keySchema(),
+        sinkRecords.get(0).valueSchema()
+    );
+    FieldsMetadata extract = FieldsMetadata.extract(
+            tableId.tableName(),
+            config.pkMode,
+            config.pkFields,
+            config.fieldsWhitelist,
+            config.fieldsBlacklist,
+            schemaPair
+    );
     String insertSql = dbDialect.buildInsertStatement(
         tableId,
-        asColumns(fieldsMetadata.keyFieldNames),
-        asColumns(fieldsMetadata.nonKeyFieldNames),
+        asColumns(extract.keyFieldNames),
+        asColumns(extract.nonKeyFieldNames),
         dbStructure.tableDefinition(connection, tableId)
     );
 
@@ -279,16 +328,12 @@ public class BatchBufferedRecords {
     for (int i = 0; i < size; i++) {
       batchInsert.append(",").append(values);
     }
-    SchemaPair schemaPair = new SchemaPair(
-        sinkRecords.get(0).keySchema(),
-        sinkRecords.get(0).valueSchema()
-    );
     insertPreparedStatement = dbDialect.createPreparedStatement(connection, batchInsert.toString());
     insertStatementBinder = dbDialect.statementBinder(
         insertPreparedStatement,
         config.pkMode,
         schemaPair,
-        fieldsMetadata,
+        extract,
         dbStructure.tableDefinition(connection, tableId),
         config.insertMode
     );
@@ -339,7 +384,7 @@ public class BatchBufferedRecords {
               insertPreparedStatement,
               config.pkMode,
               schemaPair,
-              fieldsMetadata,
+              extract,
               dbStructure.tableDefinition(connection, tableId),
               config.insertMode
           );
@@ -356,6 +401,12 @@ public class BatchBufferedRecords {
               if (isPostgreSql && null != savepoint) {
                 connection.rollback(savepoint);
               }
+
+              if (config.insertMode == DELETE_AND_INSERT || config.insertMode == UPSERT) {
+                JdbcDbWriter.special.put(sinkRecord.kafkaOffset(), sinkRecord);
+                log.info("增加待处理的主键冲突数据：【{}】",sinkRecord);
+              }
+
             } else {
               log.error("批量插入失败后尝试逐条执行时发生异常：", ex);
               throw ex;
@@ -580,39 +631,47 @@ public class BatchBufferedRecords {
         record.keySchema(),
         record.valueSchema()
     );
+    FieldsMetadata extract = FieldsMetadata.extract(
+            tableId.tableName(),
+            config.pkMode,
+            config.pkFields,
+            config.fieldsWhitelist,
+            config.fieldsBlacklist,
+            schemaPair
+    );
     switch (config.pkMode) {
       case NONE:
-        if (!fieldsMetadata.keyFieldNames.isEmpty()) {
+        if (!extract.keyFieldNames.isEmpty()) {
           throw new AssertionError();
         }
         break;
 
       case KAFKA: {
-        assert fieldsMetadata.keyFieldNames.size() == 3;
+        assert extract.keyFieldNames.size() == 3;
         return record.topic() + "_" + record.kafkaPartition() + "_" + record.kafkaOffset();
       }
 
       case RECORD_KEY: {
         if (schemaPair.keySchema.type().isPrimitive()) {
-          assert fieldsMetadata.keyFieldNames.size() == 1;
+          assert extract.keyFieldNames.size() == 1;
           return record.key().toString();
         } else {
           try {
-            return fieldsMetadata.keyFieldNames.stream()
+            return extract.keyFieldNames.stream()
                 .map(x -> ((Struct) record.key()).get(schemaPair.keySchema.field(x)).toString())
                 .collect(Collectors.joining("_"));
           } catch (Exception e) {
             String fields = schemaPair.keySchema.fields().stream().map(Field::name)
                 .collect(Collectors.joining(","));
-            log.error("获取主键字段的值异常：record.key():[{}], fields:[{}], record:{}",
-                record.key(), fields, record);
+            log.error("获取主键字段的值异常：record.key():[" + record.key() + "], fields:["
+                    + fields + "], record:[" + record + "]", e);
             throw e;
           }
         }
       }
 
       case RECORD_VALUE: {
-        return fieldsMetadata.keyFieldNames.stream()
+        return extract.keyFieldNames.stream()
             .map(x -> ((Struct) record.value()).get(schemaPair.valueSchema.field(x)).toString())
             .collect(Collectors.joining("_"));
       }
