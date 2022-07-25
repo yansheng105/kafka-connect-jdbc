@@ -22,10 +22,7 @@ import org.apache.kafka.connect.sink.SinkRecord;
 
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -43,7 +40,7 @@ public class JdbcDbWriter {
   private final DbStructure dbStructure;
   final CachedConnectionProvider cachedConnectionProvider;
   private final Map<String,String> tableNameMapping;
-  public final static ConcurrentHashMap<Long, SinkRecord> special = new ConcurrentHashMap<>();
+  private final static ConcurrentHashMap<String, CopyOnWriteArrayList<SinkRecord>> special = new ConcurrentHashMap<>();
 
   JdbcDbWriter(final JdbcSinkConfig config, DatabaseDialect dbDialect, DbStructure dbStructure) {
     this.config = config;
@@ -174,4 +171,20 @@ public class JdbcDbWriter {
               + "The correct format is: table1:topic1,topic2;table2:topic3,topic4");
     }
   }
+
+  public static void putSpecial(String key, SinkRecord record) {
+    if (special.containsKey(key)) {
+      special.computeIfPresent(key, (k, sinkRecords) -> {
+        sinkRecords.add(record);
+        return sinkRecords;
+      });
+    } else {
+      special.computeIfAbsent(key, k -> new CopyOnWriteArrayList<>(Collections.singletonList(record)));
+    }
+  }
+
+  public static CopyOnWriteArrayList<SinkRecord> getSpecial(String key) {
+    return special.get(key);
+  }
+
 }

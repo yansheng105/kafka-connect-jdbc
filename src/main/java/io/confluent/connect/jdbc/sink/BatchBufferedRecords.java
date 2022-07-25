@@ -36,6 +36,7 @@ import java.sql.Savepoint;
 import java.sql.PreparedStatement;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -251,11 +252,13 @@ public class BatchBufferedRecords {
       }
       connection.commit();
     }
+    String table = tableId.toString();
     // 处理发生过主键冲突的数据
-    if (!JdbcDbWriter.special.isEmpty()) {
+    CopyOnWriteArrayList<SinkRecord> special = JdbcDbWriter.getSpecial(table);
+    if (null !=special && !special.isEmpty()) {
       Long firstTime = records.get(0).timestamp();
       List<SinkRecord> retry = new ArrayList<>();
-      for (SinkRecord record : JdbcDbWriter.special.values()) {
+      for (SinkRecord record : special) {
         List<SinkRecord> sinkRecords = groupByPrimaryKey.get(getPrimaryKeyValues(record));
         if (null == sinkRecords || sinkRecords.isEmpty()) {
           continue;
@@ -265,7 +268,7 @@ public class BatchBufferedRecords {
           if (EventType.DELETE != getEventType(sinkRecord)) {
             continue;
           }
-          // 删除事件与主键冲突的插入事件相隔5s内则执行插入重试
+          // 删除事件与主键冲突的插入事件相隔3s内则执行插入重试
           long diff = Math.abs(sinkRecord.timestamp() - record.timestamp());
           if (diff <= 3000) {
             retry.add(record);
@@ -281,19 +284,14 @@ public class BatchBufferedRecords {
         batchInsert(retry);
         connection.commit();
         // 移除重试过的数据
-        for (SinkRecord record : retry) {
-          JdbcDbWriter.special.remove(record.kafkaOffset());
-        }
+        List<Long> offsets = retry.stream().map(SinkRecord::kafkaOffset).collect(Collectors.toList());
+        JdbcDbWriter.getSpecial(table).removeIf(next -> offsets.contains(next.kafkaOffset()));
         retry.clear();
       }
+
       // 移除超时的数据
-      List<Long> timeout = JdbcDbWriter.special.values().stream()
-              .filter(x -> Math.abs(firstTime - x.timestamp()) > 10000)
-              .map(SinkRecord::kafkaOffset).collect(Collectors.toList());
-      for (Long key : timeout) {
-        JdbcDbWriter.special.remove(key);
-      }
-      log.info("主键冲突待处理数据量：【{}】", JdbcDbWriter.special.size());
+      JdbcDbWriter.getSpecial(table).removeIf(next -> Math.abs(firstTime - next.timestamp()) > 10000);
+      log.info("主键冲突待处理数据量：【{}】", JdbcDbWriter.getSpecial(table).size());
     }
     // 关闭资源
     close();
@@ -403,7 +401,7 @@ public class BatchBufferedRecords {
               }
 
               if (config.insertMode == DELETE_AND_INSERT || config.insertMode == UPSERT) {
-                JdbcDbWriter.special.put(sinkRecord.kafkaOffset(), sinkRecord);
+                JdbcDbWriter.putSpecial(tableId.toString(), sinkRecord);
                 log.info("增加待处理的主键冲突数据：【{}】",sinkRecord);
               }
 
