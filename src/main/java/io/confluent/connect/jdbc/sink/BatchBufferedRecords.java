@@ -581,24 +581,32 @@ public class BatchBufferedRecords {
 
   private Optional<Long> executeUpdates(PreparedStatement preparedStatement) throws SQLException {
     Optional<Long> count = Optional.empty();
-    for (int updateCount : preparedStatement.executeBatch()) {
-      if (updateCount != Statement.SUCCESS_NO_INFO) {
-        count = count.isPresent()
-            ? count.map(total -> total + updateCount)
-            : Optional.of((long) updateCount);
+    try {
+      for (int updateCount : preparedStatement.executeBatch()) {
+        if (updateCount != Statement.SUCCESS_NO_INFO) {
+          count = count.isPresent()
+              ? count.map(total -> total + updateCount)
+              : Optional.of((long) updateCount);
+        }
       }
+    } catch (SQLException e) {
+      throw new SQLException("table name: " + tableId.toString() + ", " + e.getMessage(), e);
     }
     return count;
   }
 
   private long executeDeletes() throws SQLException {
     long totalDeleteCount = 0;
-    if (nonNull(deletePreparedStatement)) {
-      for (int updateCount : deletePreparedStatement.executeBatch()) {
-        if (updateCount != Statement.SUCCESS_NO_INFO) {
-          totalDeleteCount += updateCount;
+    try {
+      if (nonNull(deletePreparedStatement)) {
+        for (int updateCount : deletePreparedStatement.executeBatch()) {
+          if (updateCount != Statement.SUCCESS_NO_INFO) {
+            totalDeleteCount += updateCount;
+          }
         }
       }
+    } catch (SQLException e) {
+        throw new SQLException("table name: " + tableId.toString() + ", " + e.getMessage(), e);
     }
     return totalDeleteCount;
   }

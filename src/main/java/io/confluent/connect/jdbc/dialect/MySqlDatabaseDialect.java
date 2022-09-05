@@ -101,7 +101,7 @@ public class MySqlDatabaseDialect extends GenericDatabaseDialect {
     // 从schema中获取字段信息，目前仅支持mysql数据源
     if (null != col && col.containsKey(COLUMN_TYPE_KEY)) {
       String type = col.get(COLUMN_TYPE_KEY).toUpperCase();
-      if (col.containsKey(COLUMN_LENGTH_KEY)) {
+      if (col.containsKey(COLUMN_LENGTH_KEY) && !"0".equals(col.get(COLUMN_LENGTH_KEY))) {
         if (col.containsKey(COLUMN_SCALE_KEY)) {
           type += "(" + col.get(COLUMN_LENGTH_KEY) + "," + col.get(COLUMN_SCALE_KEY) + ")";
         } else {
