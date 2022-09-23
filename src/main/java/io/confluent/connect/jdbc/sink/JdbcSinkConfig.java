@@ -314,6 +314,16 @@ public class JdbcSinkConfig extends AbstractConfig {
   private static final String MAX_DELAY_BUFFER_SIZE_DOC = "启用消费延迟时，允许缓存的最大消息数";
   private static final String MAX_DELAY_BUFFER_SIZE_DISPLAY = "启用消费延迟时，最大允许缓存的消息数";
 
+  public static final String RATE_LIMIT = "rate.limit";
+  private static final double RATE_LIMIT_DEFAULT = 0;
+  private static final String RATE_LIMIT_DOC = "消费速率限制，单位：MB/S";
+  private static final String RATE_LIMIT_DISPLAY = "消费速率限制，单位：MB/S";
+
+  public static final String RATE_LIMIT_WARMUP_PERIOD = "rate.limit.warmup.period";
+  private static final int RATE_LIMIT_WARMUP_PERIOD_DEFAULT = 0;
+  private static final String RATE_LIMIT_WARMUP_PERIOD_DOC = "速率限制的预热周期，单位：秒";
+  private static final String RATE_LIMIT_WARMUP_PERIOD_DISPLAY = "速率限制的预热周期，单位：秒";
+
   private static final EnumRecommender QUOTE_METHOD_RECOMMENDER =
       EnumRecommender.in(QuoteMethod.values());
 
@@ -501,6 +511,28 @@ public class JdbcSinkConfig extends AbstractConfig {
             10,
             ConfigDef.Width.MEDIUM,
             MAX_DELAY_BUFFER_SIZE_DISPLAY
+        )
+        .define(
+            RATE_LIMIT,
+            ConfigDef.Type.DOUBLE,
+            RATE_LIMIT_DEFAULT,
+            ConfigDef.Importance.LOW,
+            RATE_LIMIT_DOC,
+            WRITES_GROUP,
+            11,
+            ConfigDef.Width.SHORT,
+            RATE_LIMIT_DISPLAY
+        )
+        .define(
+            RATE_LIMIT_WARMUP_PERIOD,
+            ConfigDef.Type.INT,
+            RATE_LIMIT_WARMUP_PERIOD_DEFAULT,
+            ConfigDef.Importance.LOW,
+            RATE_LIMIT_WARMUP_PERIOD_DOC,
+            WRITES_GROUP,
+            12,
+            ConfigDef.Width.SHORT,
+            RATE_LIMIT_WARMUP_PERIOD_DISPLAY
         )
         // Data Mapping
         .define(
@@ -705,6 +737,8 @@ public class JdbcSinkConfig extends AbstractConfig {
   public final String dialectName;
   public final TimeZone timeZone;
   public final EnumSet<TableType> tableTypes;
+  public final double rateLimit;
+  public final int rateLimitWarmupPeriod;
 
   public JdbcSinkConfig(Map<?, ?> props) {
     super(CONFIG_DEF, props);
@@ -752,6 +786,9 @@ public class JdbcSinkConfig extends AbstractConfig {
     if (batchEnabled && StringUtils.isEmpty(eventTypeField)) {
       throw new ConfigException("启用批处理SQL功能时必须提供事件类型字段");
     }
+
+    rateLimit = getDouble(RATE_LIMIT);
+    rateLimitWarmupPeriod = getInt(RATE_LIMIT_WARMUP_PERIOD);
 
     tableTypes = TableType.parse(getList(TABLE_TYPES_CONFIG));
   }

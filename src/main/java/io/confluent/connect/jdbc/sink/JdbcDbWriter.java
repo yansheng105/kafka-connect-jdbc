@@ -15,20 +15,25 @@
 
 package io.confluent.connect.jdbc.sink;
 
+import com.google.common.util.concurrent.RateLimiter;
 import io.confluent.connect.jdbc.util.StringUtils;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.SinkRecord;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialect;
 import io.confluent.connect.jdbc.util.CachedConnectionProvider;
 import io.confluent.connect.jdbc.util.TableId;
+import org.apache.lucene.util.RamUsageEstimator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +46,7 @@ public class JdbcDbWriter {
   final CachedConnectionProvider cachedConnectionProvider;
   private final Map<String,String> tableNameMapping;
   private final static ConcurrentHashMap<String, CopyOnWriteArrayList<SinkRecord>> special = new ConcurrentHashMap<>();
+  private RateLimiter limiter = null;
 
   JdbcDbWriter(final JdbcSinkConfig config, DatabaseDialect dbDialect, DbStructure dbStructure) {
     this.config = config;
@@ -52,7 +58,13 @@ public class JdbcDbWriter {
         config.connectionBackoffMs
     );
     this.tableNameMapping = destinationTableMapping(config.tableNameMapping);
-
+    if (config.rateLimit > 0) {
+      if (config.rateLimitWarmupPeriod > 0) {
+        limiter = RateLimiter.create(config.rateLimit * 1024, config.rateLimitWarmupPeriod, TimeUnit.SECONDS);
+      } else {
+        limiter = RateLimiter.create(config.rateLimit * 1024);
+      }
+    }
   }
 
   protected CachedConnectionProvider connectionProvider(int maxConnAttempts, long retryBackoff) {
@@ -72,6 +84,12 @@ public class JdbcDbWriter {
       if (config.batchEnabled) {
         final Map<TableId, BatchBufferedRecords> bufferByTable = new HashMap<>();
         for (SinkRecord record : records) {
+          if (null != limiter) {
+            limiter.acquire(
+                    Math.max(1, BigDecimal.valueOf(RamUsageEstimator.sizeOf(record) / 1024.0)
+                            .setScale(0, RoundingMode.HALF_UP).intValue())
+            );
+          }
           final TableId tableId = destinationTable(record);
           BatchBufferedRecords buffer = bufferByTable.get(tableId);
           if (buffer == null) {
@@ -90,6 +108,12 @@ public class JdbcDbWriter {
       } else {
         final Map<TableId, BufferedRecords> bufferByTable = new HashMap<>();
         for (SinkRecord record : records) {
+          if (null != limiter) {
+            limiter.acquire(
+                    Math.max(1, BigDecimal.valueOf(RamUsageEstimator.sizeOf(record) / 1024.0)
+                            .setScale(0, RoundingMode.HALF_UP).intValue())
+            );
+          }
           final TableId tableId = destinationTable(record);
           BufferedRecords buffer = bufferByTable.get(tableId);
           if (buffer == null) {
